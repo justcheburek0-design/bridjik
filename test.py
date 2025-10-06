@@ -10,7 +10,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://openrouter.ai/api/v1")
 
 completion = client.chat.completions.create(
-  model="x-ai/grok-4-fast:free",
+  model="x-ai/grok-4-fast",
   messages=[
     {
       "role": "user",

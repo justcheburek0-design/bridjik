@@ -212,19 +212,13 @@ async def cmd_player(message: types.Message):
     except Exception:
         pass
 
-    if not nick:
-        nick = (getattr(message.from_user, "username", None) or "").strip()
-
-    if not nick:
-        await message.reply("Укажи ник: <code>/player [ник]</code>. Не удалось определить твой ник по @username.")
-        return
     msg = await message.reply("🔎 Проверяю игрока...")
     try:
-        player_info = await mb_api.fetch_player_by_nick(nick)
+        player_info = await mb_api.fetch_player_by_nick(str(id) if not nick else "", nick)
         if not player_info:
-            await msg.edit_text(f"😕 Игрок <code>{nick}</code> не найден или произошла ошибка API.")
+            await msg.edit_text(f"😕 Игрок <code>{(nick or id)}</code> не найден или произошла ошибка API.")
             return
-        text = utils.format_player_info(nick, player_info)
+        text = utils.format_player_info(player_info)
         await msg.edit_text(text)
     except Exception as e:
         await msg.edit_text(f"❌ Ошибка при запросе: {utils._shorten(str(e), 300)}")
@@ -342,7 +336,7 @@ async def auto_reply(message: types.Message):
                 # Run image download and (optionally) RAG in parallel
                 tasks = [asyncio.create_task(_download_image())]
                 if config.RAG_ENABLED and not rag_ctx:
-                    tasks.append(asyncio.create_task(rag.build_full_context(prompt, username)))
+                    tasks.append(asyncio.create_task(rag.build_full_context(prompt, id)))
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 image_bytes = results[0]
                 if isinstance(image_bytes, Exception):

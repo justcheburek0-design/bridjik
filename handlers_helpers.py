@@ -1,6 +1,7 @@
 # handlers_helpers.py
 import logging
 from typing import Tuple
+import asyncio
 
 from bot_init import *
 import utils
@@ -83,7 +84,7 @@ async def complete_openai(
     while True:
         try:
             resp = await openai_client.chat.completions.create(
-                model="x-ai/grok-4-fast:free",
+                model="x-ai/grok-4-fast",
                 messages=messages,
                 temperature=1,
             )
@@ -109,6 +110,9 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
         genai.configure(api_key=config.GOOGLE_API_KEY)
         model = genai.GenerativeModel("gemini-2.5-flash")
         mt = (mime_type or "audio/ogg").strip().lower()
+        # Normalize Telegram voice (OGG Opus) so Gemini decodes properly
+        if mt == "audio/ogg":
+            mt = "audio/ogg; codecs=opus"
         # Pass audio bytes directly as a part
         prompt = (
             "Твоя задача — расшифровать русскую речь в обычный текст. "
@@ -122,7 +126,6 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
             ], generation_config={"temperature": 0})
         else:
             # Fallback to sync API in a thread if async is not available
-            import asyncio
             loop = asyncio.get_running_loop()
             def _sync_call():
                 return model.generate_content([
@@ -131,6 +134,12 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
                 ], generation_config={"temperature": 0})
             resp = await loop.run_in_executor(None, _sync_call)
         text = (getattr(resp, "text", None) or "").strip()
+        # Avoid echoing the instruction back if audio wasn't parsed
+        try:
+            if not text or text == prompt:
+                return None
+        except Exception:
+            pass
         return f"Голосовое сообщение: {text}"
     except Exception:
         logging.exception("Gemini ASR failed")

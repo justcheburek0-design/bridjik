@@ -26,11 +26,19 @@ def _make_punycode_host(host: str) -> str:
         return host
 
 
-async def _fetch_json_from_api(nick: str) -> Optional[Dict[str, Any]]:
+async def _fetch_json_from_api(name: str | None, id: str | None) -> Optional[Dict[str, Any]]:
     """RU: Запрашивает у MineBridge API данные по нику и возвращает JSON."""
+    if not name and not id:
+        return None
+    
     host = _make_punycode_host(config.MB_HOST)
-    nick_esc = quote_plus(nick, safe="")  # RU: гарантируем URL-безопасность ника
-    url = f"https://{host}/api/name/{nick_esc}"
+    
+    if id:
+        id_esc = quote_plus(id, safe="")  # RU: гарантируем URL-безопасность id
+        url = f"https://{host}/api/tg/{id_esc}"
+    else:
+        nick_esc = quote_plus(name, safe="")  # RU: гарантируем URL-безопасность ника
+        url = f"https://{host}/api/name/{nick_esc}"
 
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
@@ -40,15 +48,15 @@ async def _fetch_json_from_api(nick: str) -> Optional[Dict[str, Any]]:
                 return r.json()
             except Exception:
                 # RU: JSON может быть некорректным — логируем и возвращаем None
-                logger.exception("mb_api: failed to parse JSON for nick %s", nick)
+                logger.exception("mb_api: failed to parse JSON for nick %s", id)
                 return None
     except httpx.HTTPStatusError as e:
         status = getattr(e.response, "status_code", None)
         body = (getattr(e.response, "text", "") or "")[:500]
-        logger.warning("mb_api: HTTP error %s for %s: %s", status, nick, body)
+        logger.warning("mb_api: HTTP error %s for %s: %s", status, id, body)
         return None
     except Exception as e:
-        logger.exception("mb_api: network error for %s: %s", nick, e)
+        logger.exception("mb_api: network error for %s: %s", id, e)
         return None
 
 def _get_cache(key: str) -> Optional[Dict[str, Any]]:
@@ -71,14 +79,14 @@ def _set_cache(key: str, val: Optional[Dict[str, Any]]) -> None:
     _MB_CACHE[key] = (time.time(), val)
 
 
-async def fetch_player_by_nick(nick: str, use_cache: bool = True) -> Optional[str]:
+async def fetch_player_by_nick(id: str | None, name: str | None, use_cache: bool = True) -> Optional[str]:
     """
     Основная функция: принимает ник (строку), возвращает JSON-строку с информацией или None.
     use_cache=True включает кратковременный кэш.
     """
-    if not nick:
+    if not id and not name:
         return None
-    key = f"mb:{nick.lower()}"
+    key = f"mb:{(id or name)}"
     if use_cache:
         player = _get_cache(key)
         if player is not None:
@@ -87,10 +95,10 @@ async def fetch_player_by_nick(nick: str, use_cache: bool = True) -> Optional[st
                 return player
             except Exception:
                 # если по какой-то причине сериализация упала, просто вернём None
-                logger.exception("mb_api: failed to json.dumps cached value for %s", nick)
+                logger.exception("mb_api: failed to json.dumps cached value for %s", id)
                 return None
 
-    player_data = await _fetch_json_from_api(nick)
+    player_data = await _fetch_json_from_api(name, id)
 
     if player_data is None:
         return None
@@ -104,6 +112,8 @@ async def fetch_player_by_nick(nick: str, use_cache: bool = True) -> Optional[st
     
     try:
         player = {
+            "Ник": player_data.get("name") or "N/A",
+            "ТГ ID": player_data.get("telegramId") or "N/A",
             "Звёзды (рейтинг)": player_data.get("rating") or 0,
             "Погасшие звёзды (скидки)": player_data.get("faded_rating") or 0,
             "Наигранные часы": player_data.get("hours") or 0,
@@ -128,6 +138,6 @@ async def fetch_player_by_nick(nick: str, use_cache: bool = True) -> Optional[st
         return player
         
     except Exception:
-        logger.exception("mb_api: unexpected error processing data for %s", nick)
+        logger.exception("mb_api: unexpected error processing data for %s", id)
         return None
     

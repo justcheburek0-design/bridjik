@@ -251,11 +251,11 @@ def get_hour_string(hours: int) -> str:
     return f"{hours} час" if hours == 1 else f"{hours} часа"
 
 
-def format_player_info(nick: str, info: dict) -> str:
+def format_player_info(info: dict) -> str:
     """RU: Форматирует профиль MineBridge в безопасный для Telegram HTML."""
     # Порядок полей
-    lines = [f"<b>Игрок</b> <code>{escape(str(nick))}</code>:"]
-
+    lines = []
+    
     for key, value in info.items():
         if key == "Роли":
             roles_lines = "\n".join(f"• {escape(str(r))}" for r in value)

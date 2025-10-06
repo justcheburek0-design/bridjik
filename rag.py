@@ -151,7 +151,7 @@ async def search(query: str, k: int = config.RAG_TOP_K):
 
 async def build_full_context(
     prompt: str,
-    username: str | None = None,
+    id: str | None = None,
     k: int = config.RAG_TOP_K,
     max_chars: int = 2000,
 ) -> str:
@@ -161,7 +161,7 @@ async def build_full_context(
     # Start independent requests in parallel
     status_task = asyncio.create_task(mc.fetch_status())
     search_task = asyncio.create_task(search(prompt, k=k))
-    player_task = asyncio.create_task(fetch_player_by_nick(username)) if username else None
+    player_task = asyncio.create_task(fetch_player_by_nick(id)) if id else None
 
     # RU: Динамический контекст сервера
     try:
@@ -173,7 +173,7 @@ async def build_full_context(
         logging.exception("RAG: failed to fetch server status")
 
     # RU: Динамический контекст игрока
-    if username:
+    if id:
         try:
             player_info = await player_task
             if player_info:
