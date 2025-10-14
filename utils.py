@@ -38,7 +38,10 @@ def _save_history() -> None:
         out: Dict[str, list[list[str]]] = {}
         for key, dq in HISTORY.items():
             out[_hist_key_str(key)] = [[role, msg] for role, msg in dq]
-        config.HISTORY_FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        # ensure dir exists
+        path = config.HISTORY_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         logging.exception("Failed to save HISTORY to JSON")
 
@@ -77,7 +80,9 @@ def _save_chat_logs() -> None:
         out: Dict[str, list[list[object]]] = {}
         for chat_id, dq in CHAT_LOGS.items():
             out[str(chat_id)] = [[author, bool(is_bot), msg] for (author, is_bot, msg) in dq]
-        config.CHAT_LOGS_FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        path = config.CHAT_LOGS_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         logging.exception("Failed to save CHAT_LOGS to JSON")
 
@@ -293,7 +298,9 @@ _USER_FREEZES: Dict[int, float] = {}
 def _save_freezes() -> None:
     try:
         data = {str(uid): ts for uid, ts in _USER_FREEZES.items()}
-        config.FREEZES_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        path = config.FREEZES_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         logging.exception("Failed to save FREEZES to JSON")
 
@@ -400,6 +407,7 @@ def _save_psevdos() -> None:
     """Persist the in-memory psevdos map to disk."""
     try:
         path = config.PSEVDO_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
         data = {str(k): v for k, v in _PSEVDOS.items()}
         txt = json.dumps(data, ensure_ascii=False, indent=2)
         path.write_text(txt, encoding="utf-8")
