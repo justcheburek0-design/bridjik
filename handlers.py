@@ -338,16 +338,18 @@ async def auto_reply(message: types.Message):
                         resp.raise_for_status()
                         return resp.content
 
-                # Run image download and (optionally) RAG in parallel
+                # Run image download and RAG in parallel
                 tasks = [
-                    asyncio.create_task(_download_image()), 
-                    asyncio.create_task(rag.build_full_context(prompt, id))
+                    asyncio.create_task(rag.build_full_context(prompt, id)),
+                    asyncio.create_task(_download_image())
                 ]
-                results = await asyncio.gather(*tasks, True)
-                image_bytes = results[0]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                rag_ctx, image_bytes = results
                 if isinstance(image_bytes, Exception):
                     raise image_bytes
-                rag_ctx = results[1] if results[1] and not isinstance(results[1], Exception) else ""
+                if isinstance(rag_ctx, Exception):
+                    logging.exception(f"RAG: failed to build context. {rag_ctx}")
+                    rag_ctx = ""
 
                 answer = await handlers_helpers.complete_openai(
                     prompt,
@@ -365,7 +367,7 @@ async def auto_reply(message: types.Message):
         else:
             try:
                 # Получаем RAG контекст (если включён)
-                rag_ctx = await rag.build_full_context(prompt, username)
+                rag_ctx = await rag.build_full_context(prompt, id)
             except Exception:
                 logging.exception("RAG: failed to build context")
             
