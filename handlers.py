@@ -54,10 +54,14 @@ async def cmd_psevdo(message: types.Message):
             if current:
                 await message.reply(
                     f"Ваше текущее прозвище: <b>{current}</b>\n" \
-                    f"Чтобы изменить: <code>/psevdo [Прозвище]</code>"
+                    f"Чтобы изменить: <code>/psevdo [Прозвище]</code>\n" \
+                    f"Ограничение: 100 символов"
                 )
             else:
-                await message.reply("Задайте прозвище: <code>/psevdo [Прозвище]</code>")
+                await message.reply(
+                    "Задайте прозвище: <code>/psevdo [Прозвище]</code>\n" \
+                    "Ограничение: 100 символов"
+                )
             return
         name = m.group(1).strip()
         if not name:
