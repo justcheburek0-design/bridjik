@@ -299,8 +299,8 @@ def set_user_psevdo(user_id: int, name: str) -> str:
     name = (name or "").strip()
     # normalize whitespace and length
     name = re.sub(r"\s+", " ", name)
-    if len(name) > 50:
-        name = name[:50]
+    if len(name) > 100:
+        name = name[:100]
     _PSEVDOS[user_id] = name
     _save_psevdos()
     return name
