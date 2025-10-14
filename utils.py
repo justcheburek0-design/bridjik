@@ -3,6 +3,7 @@ from html import escape
 import re
 import hashlib
 import logging
+import json
 from pathlib import Path
 from typing import Tuple, Deque, Dict, List
 from collections import defaultdict, deque
@@ -30,7 +31,7 @@ CHAT_LOGS: Dict[int, Deque[ChatLine]] = defaultdict(
 )
 
 
-def _shorten(s: str, limit: int = 400) -> str:
+def _shorten(s: str, limit: int = 700) -> str:
     """RU: Обрезает пробелы и длинные строки, добавляя многоточие."""
     s = (s or "").strip()
     return (s[:limit] + "...") if len(s) > limit else s
@@ -166,7 +167,7 @@ def load_system_prompt_for_chat(chat: types.Chat) -> str:
         logging.exception("Failed to load .txt prompt: %s", e)
     return "Пиши что я сегодня не смогу помочь, мой системный промт сломался."
 
-def should_answer(message: types.Message, bot_username: str) -> bool:
+def should_answer(message: types.Message) -> bool:
     """RU: Эвристически решает, нужно ли боту отвечать автоматически."""
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     # RU: Если это reply — реагируем только если ответ адресован нашему боту
@@ -266,3 +267,80 @@ def format_player_info(info: dict) -> str:
             lines.append(f"{escape(key)}: <code>{escape(str(value))}</code>")
 
     return "\n".join(lines)
+
+# ===== User psevdos (local persistent mapping) =====
+_PSEVDOS: Dict[int, str] = {}
+
+def _load_psevdos() -> None:
+    """Load persisted user psevdos from disk into memory."""
+    global _PSEVDOS
+    try:
+        path = config.PSEVDO_FILE
+        if path.exists():
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw or "{}")
+            _PSEVDOS = {int(k): str(v) for k, v in data.items() if str(v).strip()}
+    except Exception as e:
+        logging.exception("Failed to load psevdos: %s", e)
+        _PSEVDOS = {}
+
+def _save_psevdos() -> None:
+    """Persist the in-memory psevdos map to disk."""
+    try:
+        path = config.PSEVDO_FILE
+        data = {str(k): v for k, v in _PSEVDOS.items()}
+        txt = json.dumps(data, ensure_ascii=False, indent=2)
+        path.write_text(txt, encoding="utf-8")
+    except Exception as e:
+        logging.exception("Failed to save psevdos: %s", e)
+
+def set_user_psevdo(user_id: int, name: str) -> str:
+    """Set user's personal psevdonym and persist it. Returns normalized name."""
+    name = (name or "").strip()
+    # normalize whitespace and length
+    name = re.sub(r"\s+", " ", name)
+    if len(name) > 50:
+        name = name[:50]
+    _PSEVDOS[user_id] = name
+    _save_psevdos()
+    return name
+
+def get_user_psevdo(user_id: int) -> Optional[str]:
+    """Return user's psevdonym if set."""
+    return _PSEVDOS.get(user_id)
+
+# Initialize on import
+_load_psevdos()
+
+
+def display_name(user: types.User, prefer_username: bool = False) -> str:
+    """Return best display name for addressing a user.
+
+    Priority:
+    - saved psevdonym (/psevdo)
+    - first_name (if available and prefer_username is False)
+    - username (without @)
+    - generic fallback
+    """
+    try:
+        if user is None:
+            return "Пользователь"
+        uid = getattr(user, "id", None)
+        if uid is not None:
+            pn = get_user_psevdo(int(uid))
+            if pn:
+                return pn
+        if not prefer_username:
+            name = getattr(user, "first_name", None)
+            if name:
+                return str(name)
+        uname = getattr(user, "username", None)
+        if uname:
+            return str(uname)
+        # fallback to first_name if username missing and prefer_username True
+        name = getattr(user, "first_name", None)
+        if name:
+            return str(name)
+    except Exception:
+        pass
+    return "Пользователь"

@@ -38,6 +38,40 @@ def _build_freeze_keyboard(id: int, hot: bool = True) -> types.InlineKeyboardMar
         rows.append([types.InlineKeyboardButton(text="🔥 Разморозка 🔥", callback_data=f"unfreeze:{id}")])
     return types.InlineKeyboardMarkup(inline_keyboard=rows)
 
+@dp.message(Command("psevdo"))
+async def cmd_psevdo(message: types.Message):
+    """RU: /psevdo [прозвище] — сохранить личное прозвище локально (id -> прозвище).
+    Без аргумента показывает текущее и пример использования."""
+    try:
+        if not message.from_user:
+            return
+        uid = message.from_user.id
+        raw = (message.text or "").strip()
+        # extract everything after command token (supports "/psevdo@botname")
+        m = re.match(r"^/psevdo(?:@\w+)?\s+(.+)$", raw, flags=re.IGNORECASE)
+        if not m:
+            current = utils.get_user_psevdo(uid)
+            if current:
+                await message.reply(
+                    f"Ваше текущее прозвище: <b>{current}</b>\n" \
+                    f"Чтобы изменить: <code>/psevdo [Прозвище]</code>"
+                )
+            else:
+                await message.reply("Задайте прозвище: <code>/psevdo [Прозвище]</code>")
+            return
+        name = m.group(1).strip()
+        if not name:
+            await message.reply("Пустое прозвище не сохраняю. Пример: <code>/psevdo Вася</code>")
+            return
+        name = utils.set_user_psevdo(uid, name)
+        await message.reply(f"Готово. Ваше прозвище: <b>{name}</b>")
+    except Exception:
+        logging.exception("/psevdo handler failed")
+        try:
+            await message.reply("Не получилось сохранить прозвище, попробуйте позже.")
+        except Exception:
+            pass
+
 @dp.message(Command("id"))
 async def cmd_id(message: types.Message):
     """RU: Ответить ID текущего чата."""
@@ -78,9 +112,15 @@ async def cmd_freeze(message: types.Message):
 async def cmd_start(message: types.Message):
     """RU: Приветствие и предложение подписаться при необходимости."""
     id = message.from_user.id
-    username = (message.from_user.username or f"{message.from_user.first_name}")
+    # Имя для приветствия: псевдоним (если есть), иначе @username, иначе имя
+    _p = utils.get_user_psevdo(id)
+    if _p:
+        greet_name = _p
+    else:
+        _u = getattr(message.from_user, "username", None)
+        greet_name = f"@{_u}" if _u else (message.from_user.first_name or "")
     if await is_subscribed(id):
-        await message.reply(f"Привет, @{username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {greet_name}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
         return
 
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -141,7 +181,9 @@ async def cmd_rag_reindex(message: types.Message):
 @dp.callback_query()
 async def callback_any(query: types.CallbackQuery):
     """RU: Обрабатывает коллбеки: freeze/unfreeze и проверку подписки."""
-    username = (query.from_user.username or f"{query.from_user.first_name}")
+    username = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or (
+        getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", "")
+    )
     data = (query.data or "").strip()
 
     if data.startswith("freeze:"):
@@ -205,14 +247,14 @@ async def callback_any(query: types.CallbackQuery):
         return
 
     if await is_subscribed(query.from_user.id):
-        await query.message.reply(f"Привет, @{username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await query.message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
     else:
         await query.message.reply("Подписка не найдена! Убедитесь, что подписаны на канал", show_alert=True)
 
 @dp.message(Command("player"))
  # RU: Команда /player — получить данные игрока по нику (или @username)
 async def cmd_player(message: types.Message):
-    """/player [nick] — получить данные игрока из MineBridge API.
+    """/player — получить данные игрока из MineBridge API.
     Если ник не указан, пробуем использовать Telegram @username отправителя."""
     id = message.from_user.id
     text = (message.text or "").strip()
@@ -285,12 +327,11 @@ async def auto_reply(message: types.Message):
         ct_name = getattr(chat_type, "name", str(chat_type)).upper()
     is_group = ct_name in ("GROUP", "SUPERGROUP")
 
-    if is_group and not utils.should_answer(message, bot_username):
+    if is_group and not utils.should_answer(message):
         logging.info("Пропущено (но сохранено) сообщение без упоминания бриджика или ответа на бриджик (группа)")
         utils.save_incoming_message(message, prompt)
         return
     
-    id = message.from_user.id
     if not await is_subscribed(id):
         await message.reply("Подпишитесь на @MineBridgeOfficial, чтобы пользоваться бриджиком")
         utils.save_incoming_message(message, prompt)
@@ -308,11 +349,13 @@ async def auto_reply(message: types.Message):
             msg = await message.reply("🎙️ <b>Распознаю голосовое...</b>")
         else:
             msg = await message.reply("⏳ <b>Думаю...</b>")
-        username = (message.from_user.username or f"{message.from_user.first_name}")
+        # Имя для LLM контекста: псевдоним, иначе first_name/username (без @)
+        username = utils.get_user_psevdo(id) or (
+            getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
+        )
         conv_key = utils.make_key(message)
 
         sys_prompt = utils.load_system_prompt_for_chat(message.chat)
-        sys_prompt += "\n\nПоддерживаются теги [[photo:...]] и [[sticker:...]] (file_id/alias)."
         sys_prompt += "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=""></a>"
 
         rag_ctx = ""
@@ -370,8 +413,6 @@ async def auto_reply(message: types.Message):
                 rag_ctx = await rag.build_full_context(prompt, id)
             except Exception:
                 logging.exception("RAG: failed to build context")
-                
-            print(rag_ctx)
             
             answer = await handlers_helpers.complete_openai(
                 prompt,
