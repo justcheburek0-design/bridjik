@@ -22,6 +22,47 @@ HISTORY: Dict[HistoryKey, Deque[Tuple[str, str]]] = defaultdict(
     lambda: deque(maxlen=config.DM_MAX_MESSAGES)
 )
 
+# JSON-персист для HISTORY
+def _hist_key_str(key: HistoryKey) -> str:
+    return f"{key[0]}:{key[1]}"
+
+def _hist_key_parse(s: str) -> Optional[HistoryKey]:
+    try:
+        a, b = str(s).split(":", 1)
+        return (int(a), int(b))
+    except Exception:
+        return None
+
+def _save_history() -> None:
+    try:
+        out: Dict[str, list[list[str]]] = {}
+        for key, dq in HISTORY.items():
+            out[_hist_key_str(key)] = [[role, msg] for role, msg in dq]
+        config.HISTORY_FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        logging.exception("Failed to save HISTORY to JSON")
+
+def _load_history() -> None:
+    try:
+        p = config.HISTORY_FILE
+        if not p.exists():
+            return
+        data = json.loads(p.read_text(encoding="utf-8") or "{}")
+        for k, items in data.items():
+            key = _hist_key_parse(k)
+            if not key:
+                continue
+            dq: Deque[Tuple[str, str]] = deque(maxlen=config.DM_MAX_MESSAGES)
+            for row in items:
+                try:
+                    role, msg = row
+                    dq.append((str(role), _shorten(str(msg))))
+                except Exception:
+                    continue
+            HISTORY[key] = dq
+    except Exception:
+        logging.exception("Failed to load HISTORY from JSON")
+
 # ===== Per-chat raw history (последние сообщения чата) =====
 # Храним только необходимые поля, чтобы не тащить целый Message.
 # (author, is_bot, text)
@@ -29,6 +70,38 @@ ChatLine = Tuple[str, bool, str]
 CHAT_LOGS: Dict[int, Deque[ChatLine]] = defaultdict(
     lambda: deque(maxlen=config.GROUP_MAX_MESSAGES)
 )
+
+# JSON-персист для CHAT_LOGS
+def _save_chat_logs() -> None:
+    try:
+        out: Dict[str, list[list[object]]] = {}
+        for chat_id, dq in CHAT_LOGS.items():
+            out[str(chat_id)] = [[author, bool(is_bot), msg] for (author, is_bot, msg) in dq]
+        config.CHAT_LOGS_FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        logging.exception("Failed to save CHAT_LOGS to JSON")
+
+def _load_chat_logs() -> None:
+    try:
+        p = config.CHAT_LOGS_FILE
+        if not p.exists():
+            return
+        data = json.loads(p.read_text(encoding="utf-8") or "{}")
+        for k, items in data.items():
+            try:
+                chat_id = int(k)
+            except Exception:
+                continue
+            dq: Deque[ChatLine] = deque(maxlen=config.GROUP_MAX_MESSAGES)
+            for row in items:
+                try:
+                    author, is_bot, msg = row
+                    dq.append((str(author), bool(is_bot), _shorten(str(msg))))
+                except Exception:
+                    continue
+            CHAT_LOGS[chat_id] = dq
+    except Exception:
+        logging.exception("Failed to load CHAT_LOGS from JSON")
 
 
 def _shorten(s: str, limit: int = 700) -> str:
@@ -43,10 +116,12 @@ def make_key(msg: types.Message) -> HistoryKey:
 def remember_user(key: HistoryKey, text: str) -> None:
     """RU: Сохраняет краткую версию последнего сообщения пользователя."""
     HISTORY[key].append(("user", _shorten(text)))
+    _save_history()
 
 def remember_assistant(key: HistoryKey, text: str) -> None:
     """RU: Сохраняет краткий ответ ассистента для контекста."""
     HISTORY[key].append(("assistant", _shorten(text)))
+    _save_history()
 
 def build_input_with_history(key: HistoryKey, user_text: str, name: str) -> str:
     """RU: Собирает короткую историю чата вместе с новым текстом пользователя."""
@@ -94,12 +169,14 @@ def save_incoming_message(message: types.Message, text: str) -> None:
         else:
             return
     CHAT_LOGS[chat_id].append((author, is_bot, _shorten(text)))
+    _save_chat_logs()
 
 def save_outgoing_message(chat_id: int, text: str, bot_display_name: str = "Ассистент") -> None:
     """Track what the bot answered so the transcript stays balanced."""
     if not text:
         return
     CHAT_LOGS[chat_id].append((bot_display_name, True, _shorten(text)))
+    _save_chat_logs()
 
 async def build_input_from_chat_thread(
     message: types.Message,
@@ -167,13 +244,13 @@ def load_system_prompt_for_chat(chat: types.Chat) -> str:
         logging.exception("Failed to load .txt prompt: %s", e)
     return "Пиши что я сегодня не смогу помочь, мой системный промт сломался."
 
-def should_answer(message: types.Message) -> bool:
+def should_answer(message: types.Message, bot_username: str | None = None) -> bool:
     """RU: Эвристически решает, нужно ли боту отвечать автоматически."""
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     # RU: Если это reply — реагируем только если ответ адресован нашему боту
     if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
         replied_username = (getattr(message.reply_to_message.from_user, "username", "") or "").lower()
-        if replied_username == (bot_username or "").lower():
+        if bot_username and replied_username == (bot_username or "").lower():
             return True
         # Reply to a different bot — do not trigger autoreply
         return False
@@ -181,7 +258,7 @@ def should_answer(message: types.Message) -> bool:
         for entity in message.entities:
             if entity.type == "mention":
                 mention_text = text[entity.offset: entity.offset + entity.length]
-                if mention_text.lstrip("@").lower() == bot_username:
+                if bot_username and mention_text.lstrip("@").lower() == bot_username:
                     return True
     BOT_ADDRESS_RE = re.compile(r'(?i)(?<!\w)(?:нейро-?бот(?:ик|яра)?|бот(?:ик|яра)?|бридж(?:ик)?)(?!\w)')
     if BOT_ADDRESS_RE.search(text):
@@ -213,23 +290,58 @@ def should_answer(message: types.Message) -> bool:
 
 _USER_FREEZES: Dict[int, float] = {}
 
+def _save_freezes() -> None:
+    try:
+        data = {str(uid): ts for uid, ts in _USER_FREEZES.items()}
+        config.FREEZES_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        logging.exception("Failed to save FREEZES to JSON")
+
+def _load_freezes() -> None:
+    try:
+        p = config.FREEZES_FILE
+        if not p.exists():
+            return
+        raw = p.read_text(encoding="utf-8")
+        data = json.loads(raw or "{}")
+        _USER_FREEZES.clear()
+        now = time.time()
+        for k, ts in data.items():
+            try:
+                uid = int(k)
+                tsv = float(ts)
+                if tsv > now:
+                    _USER_FREEZES[uid] = tsv
+            except Exception:
+                continue
+    except Exception:
+        logging.exception("Failed to load FREEZES from JSON")
+
 def _cleanup_freezes(now: Optional[float] = None) -> None:
     """RU: Удаляет истёкшие записи заморозки, поддерживая кэш в актуальном состоянии."""
     if now is None:
         now = time.time()
     expired = [uid for uid, ts in _USER_FREEZES.items() if ts <= now]
+    changed = False
     for uid in expired:
-        _USER_FREEZES.pop(uid, None)
+        if _USER_FREEZES.pop(uid, None) is not None:
+            changed = True
+    if changed:
+        _save_freezes()
 
 def set_user_freeze(user_id: int, hours: int) -> float:
     """RU: Включает заморозку автоответов для пользователя на указанное число часов."""
     expires_at = time.time() + hours * 3600
     _USER_FREEZES[user_id] = expires_at
+    _save_freezes()
     return expires_at
 
 def clear_user_freeze(user_id: int) -> bool:
     """RU: Снимает заморозку, если она была; возвращает факт изменения."""
-    return _USER_FREEZES.pop(user_id, None) is not None
+    removed = _USER_FREEZES.pop(user_id, None) is not None
+    if removed:
+        _save_freezes()
+    return removed
 
 def get_user_freeze(user_id: int) -> Optional[float]:
     """RU: Возвращает UNIX-время окончания заморозки (или None)."""
@@ -310,6 +422,9 @@ def get_user_psevdo(user_id: int) -> Optional[str]:
     return _PSEVDOS.get(user_id)
 
 # Initialize on import
+_load_history()
+_load_chat_logs()
+_load_freezes()
 _load_psevdos()
 
 
