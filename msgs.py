@@ -13,12 +13,13 @@ import httpx
 
 from config import PIXABAY_API_KEY
 import config
+import bot_init
 
 
 PHOTO_TAG_RE = re.compile(r"\[\[photo:([^\]]+)\]\]", re.IGNORECASE)
 STICKER_TAG_RE = re.compile(r"\[\[sticker:([^\]]+)\]\]", re.IGNORECASE)
 # RU: Универсальный парсер медиа-тегов, чтобы сохранять порядок в тексте
-MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker):([^\]]+)\]\]", re.IGNORECASE)
+MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb):([^\]]+)\]\]", re.IGNORECASE)
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
 _IMAGE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -209,6 +210,39 @@ async def _resolve_sticker_payload(payload: str, chat_id: int) -> str | None:
             return config.STICKERS[p]
     return p
 
+def _parse_keyboard_payload(payload: str) -> types.InlineKeyboardMarkup | None:
+    """Parse [[kb:...]] payload into InlineKeyboardMarkup.
+
+    Syntax examples:
+    - [[kb:Text|https://example.com]]
+    - [[kb:One|URL1, Two|URL2]]             # single row
+    - [[kb:One|URL1, Two|URL2; Three|URL3]]  # multiple rows
+    - [[kb:Press|cb:action]]                 # callback button
+    """
+    s = (payload or "").strip()
+    if not s:
+        return None
+    rows: list[list[types.InlineKeyboardButton]] = []
+    for row_str in re.split(r"\s*;\s*", s):
+        if not row_str:
+            continue
+        buttons: list[types.InlineKeyboardButton] = []
+        for btn_str in [b for b in re.split(r"\s*,\s*", row_str) if b]:
+            if "|" in btn_str:
+                text, action = btn_str.split("|", 1)
+            else:
+                continue
+            text = text.strip()
+            action = action.strip()
+            if not text or not action:
+                continue
+            buttons.append(types.InlineKeyboardButton(text=text, url=action))
+        if buttons:
+            rows.append(buttons)
+    if not rows:
+        return None
+    return types.InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 async def long_text(msg: types.Message, user_msg: types.Message, text: str):
     """RU: Отправляет длинный текст частями и встраивает фото по тегам [[photo:...]]."""
@@ -227,31 +261,46 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
             actions.append(("photo", payload))
         elif kind == "sticker":
             actions.append(("sticker", payload))
+        elif kind == "kb":
+            actions.append(("kb", payload))
         pos = m.end()
     if pos < len(text):
         actions.append(("text", text[pos:]))
 
     sent_any_text = False
+    last_text_msg: types.Message | None = None
+    pending_kb: types.InlineKeyboardMarkup | None = None
 
     async def send_text_blocks(s: str, first_edit: bool):
-        nonlocal sent_any_text
+        nonlocal sent_any_text, last_text_msg, pending_kb
         s = s.strip()
         if not s:
             return
         parts = [s[i:i + CHUNK] for i in range(0, len(s), CHUNK)]
         if first_edit:
             try:
-                await msg.edit_text(parts[0])
+                if pending_kb is not None:
+                    last_text_msg = await msg.edit_text(parts[0], reply_markup=pending_kb)
+                    pending_kb = None
+                else:
+                    last_text_msg = await msg.edit_text(parts[0])
                 sent_any_text = True
             except Exception:
                 logging.exception("failed to edit initial message with text")
-                await user_msg.answer(parts[0])
+                last_text_msg = await user_msg.answer(parts[0])
+                # Применим отложенную клавиатуру, если была
+                if pending_kb is not None:
+                    try:
+                        await last_text_msg.edit_reply_markup(reply_markup=pending_kb)
+                    except Exception:
+                        logging.exception("failed to set pending keyboard on fallback message")
+                    pending_kb = None
                 sent_any_text = True
             for part in parts[1:]:
-                await user_msg.answer(part)
+                last_text_msg = await user_msg.answer(part)
         else:
             for part in parts:
-                await user_msg.answer(part)
+                last_text_msg = await user_msg.answer(part)
                 sent_any_text = True
 
     first_text_pending = True
@@ -278,6 +327,18 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
                 await user_msg.answer_sticker(sticker=sticker_id)
             except Exception:
                 logging.exception("failed to send sticker: %s", payload)
+        elif kind == "kb":
+            kb = _parse_keyboard_payload(payload)
+            if not kb:
+                logging.warning("keyboard payload invalid: %s", payload)
+                continue
+            try:
+                if last_text_msg is not None:
+                    await last_text_msg.edit_reply_markup(reply_markup=kb)
+                else:
+                    pending_kb = kb
+            except Exception:
+                logging.exception("failed to set reply markup (keyboard)")
 
     if first_text_pending:
         try:
