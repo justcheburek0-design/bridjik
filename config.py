@@ -14,6 +14,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 CHANNEL = os.getenv("CHANNEL", "@MineBridgeOfficial")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/HelpSupportMineBridgeBot")
+DONATE_URL = os.getenv("DONATE_URL", "https://m-br.ru/shop/buy")
 
 # Память
 GROUP_MAX_MESSAGES = 12
@@ -28,7 +30,6 @@ BASE_DIR = Path(__file__).resolve().parent
 KB_DIR = Path(__file__).resolve().parent / "kb"          # положите сюда .txt/.md файлы
 RAG_INDEX_DIR = Path(__file__).resolve().parent / ".rag_cache"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
-RAG_ENABLED = True
 RAG_CHUNK_SIZE = 900
 RAG_CHUNK_OVERLAP = 150
 RAG_TOP_K = 6
@@ -106,3 +107,12 @@ if not JINA_KEY:
     raise RuntimeError("Set JINA_API_KEY in .env")
 if not GOOGLE_API_KEY:
     raise RuntimeError("Set GOOGLE_API_KEY in .env")
+if not PIXABAY_API_KEY:
+    raise RuntimeError("Set PIXABAY_API_KEY in .env")
+if not DONATE_URL.startswith("http"):
+    raise RuntimeError("Set DONATE_URL in .env")
+if not SUPPORT_URL.startswith("http"):
+    raise RuntimeError("Set SUPPORT_URL in .env")
+if not MB_HOST:
+    raise RuntimeError("Set MB_HOST in .env")
+

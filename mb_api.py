@@ -26,19 +26,15 @@ def _make_punycode_host(host: str) -> str:
         return host
 
 
-async def _fetch_json_from_api(name: str | None, id: str | None) -> Optional[Dict[str, Any]]:
+async def _fetch_json_from_api(id: str | None) -> Optional[Dict[str, Any]]:
     """RU: Запрашивает у MineBridge API данные по нику и возвращает JSON."""
-    if not name and not id:
+    if not id:
         return None
     
     host = _make_punycode_host(config.MB_HOST)
     
-    if id:
-        id_esc = quote_plus(id, safe="")  # RU: гарантируем URL-безопасность id
-        url = f"https://{host}/api/tg/{id_esc}"
-    else:
-        nick_esc = quote_plus(name, safe="")  # RU: гарантируем URL-безопасность ника
-        url = f"https://{host}/api/name/{nick_esc}"
+    id_esc = quote_plus(id, safe="")  # RU: гарантируем URL-безопасность id
+    url = f"https://{host}/api/tg/{id_esc}"
 
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
@@ -79,14 +75,14 @@ def _set_cache(key: str, val: Optional[Dict[str, Any]]) -> None:
     _MB_CACHE[key] = (time.time(), val)
 
 
-async def fetch_player_by_nick(id: str | None, name: str | None, use_cache: bool = True) -> Optional[str]:
+async def fetch_player_by_id(id: str | None, use_cache: bool = True) -> Optional[str]:
     """
     Основная функция: принимает ник (строку), возвращает JSON-строку с информацией или None.
     use_cache=True включает кратковременный кэш.
     """
-    if not id and not name:
+    if not id:
         return None
-    key = f"mb:{(id or name)}"
+    key = f"mb:{id}"
     if use_cache:
         player = _get_cache(key)
         if player is not None:
@@ -98,7 +94,7 @@ async def fetch_player_by_nick(id: str | None, name: str | None, use_cache: bool
                 logger.exception("mb_api: failed to json.dumps cached value for %s", id)
                 return None
 
-    player_data = await _fetch_json_from_api(name, id)
+    player_data = await _fetch_json_from_api(id)
 
     if player_data is None:
         return None
@@ -140,4 +136,3 @@ async def fetch_player_by_nick(id: str | None, name: str | None, use_cache: bool
     except Exception:
         logger.exception("mb_api: unexpected error processing data for %s", id)
         return None
-    

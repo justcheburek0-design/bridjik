@@ -9,7 +9,7 @@ from datetime import *
 import config
 import utils
 import mc
-from mb_api import fetch_player_by_nick
+import mb_api
 
 RAG_CHUNKS = []   # [{id, file, text, mtime}]
 RAG_VECS = None
@@ -136,8 +136,6 @@ async def _ensure_rag_index():
 
 async def search(query: str, k: int = config.RAG_TOP_K):
     """RU: Возвращает top-k наиболее релевантных фрагментов из базы знаний."""
-    if not config.RAG_ENABLED:
-        return []
     await _ensure_rag_index()
     global RAG_VECS, RAG_CHUNKS
     if RAG_VECS is None or len(RAG_CHUNKS) == 0:
@@ -161,7 +159,7 @@ async def build_full_context(
     # Start independent requests in parallel
     status_task = asyncio.create_task(mc.fetch_status())
     search_task = asyncio.create_task(search(prompt, k=k))
-    player_task = asyncio.create_task(fetch_player_by_nick(id)) if id else None
+    player_task = asyncio.create_task(mb_api.fetch_player_by_id(str(id))) if id else None
 
     # RU: Динамический контекст сервера
     try:

@@ -92,6 +92,27 @@ async def cmd_start(message: types.Message):
         reply_markup=kb
     )
 
+
+@dp.message(Command("support"))
+async def cmd_support(message: types.Message):
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="Техподдержка", url=config.SUPPORT_URL)]
+    ])
+    await message.reply(
+        "Отвечаем от пары минут до пары часов, пишите всё в одно сообщение!",
+        reply_markup=kb
+    )
+
+@dp.message(Command("donate"))
+async def cmd_donate(message: types.Message):
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="Купить мостики", url=config.DONATE_URL)]
+    ])
+    await message.reply(
+        "На сервере действует валюта мостики, 1 мостик = 1 рубль",
+        reply_markup=kb
+    )
+
 @dp.message(Command("status"))
 # RU: Возвращает текущий статус Minecraft-сервера (через публичное API)
 async def cmd_status(message: types.Message):
@@ -106,9 +127,6 @@ async def cmd_status(message: types.Message):
 @dp.message(Command("rag_reindex"))
 # RU: Пересборка локального RAG-индекса по запросу администратора
 async def cmd_rag_reindex(message: types.Message):
-    if not config.RAG_ENABLED:
-        await message.reply("RAG отключён")
-        return
     msg = await message.reply("🔄 <b>Перестраиваю индекс</b>...")
     try:
         global RAG_CHUNKS
@@ -204,19 +222,12 @@ async def cmd_player(message: types.Message):
         return
     
     text = (message.text or "").strip()
-    nick = ""
-    try:
-        parts = text.split(maxsplit=1)
-        if len(parts) > 1:
-            nick = parts[1].strip()
-    except Exception:
-        pass
 
-    msg = await message.reply("🔎 Проверяю игрока...")
+    msg = await message.reply("🔎 Проверяю тебя...")
     try:
-        player_info = await mb_api.fetch_player_by_nick(str(id) if not nick else "", nick)
+        player_info = await mb_api.fetch_player_by_id(str(id))
         if not player_info:
-            await msg.edit_text(f"😕 Игрок <code>{(nick or id)}</code> не найден или произошла ошибка API.")
+            await msg.edit_text(f"😕 Игрок <code>{(id)}</code> не найден или произошла ошибка API.")
             return
         text = utils.format_player_info(player_info)
         await msg.edit_text(text)
@@ -305,13 +316,7 @@ async def auto_reply(message: types.Message):
         sys_prompt += "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=""></a>"
 
         rag_ctx = ""
-        try:
-            # Получаем RAG контекст (если включён)
-            if config.RAG_ENABLED:
-                rag_ctx = await rag.build_full_context(prompt, username)
-        except Exception:
-            logging.exception("RAG: failed to build context")
-
+        
         # call OpenAI: vision for images, plain for text
         if has_image:
             try:
@@ -334,19 +339,15 @@ async def auto_reply(message: types.Message):
                         return resp.content
 
                 # Run image download and (optionally) RAG in parallel
-                tasks = [asyncio.create_task(_download_image())]
-                if config.RAG_ENABLED and not rag_ctx:
-                    tasks.append(asyncio.create_task(rag.build_full_context(prompt, id)))
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                tasks = [
+                    asyncio.create_task(_download_image()), 
+                    asyncio.create_task(rag.build_full_context(prompt, id))
+                ]
+                results = await asyncio.gather(*tasks, True)
                 image_bytes = results[0]
                 if isinstance(image_bytes, Exception):
                     raise image_bytes
-                if len(results) > 1:
-                    rag_res = results[1]
-                    if isinstance(rag_res, Exception):
-                        logging.exception("RAG: failed to build context")
-                    else:
-                        rag_ctx = rag_res
+                rag_ctx = results[1] if results[1] and not isinstance(results[1], Exception) else ""
 
                 answer = await handlers_helpers.complete_openai(
                     prompt,
@@ -362,6 +363,12 @@ async def auto_reply(message: types.Message):
                 logging.exception("vision flow failed")
                 answer = "Не удалось обработать изображение. Попробуй ещё раз прислать фото или добавь подпись."
         else:
+            try:
+                # Получаем RAG контекст (если включён)
+                rag_ctx = await rag.build_full_context(prompt, username)
+            except Exception:
+                logging.exception("RAG: failed to build context")
+            
             answer = await handlers_helpers.complete_openai(
                 prompt,
                 username,
