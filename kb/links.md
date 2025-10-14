@@ -13,6 +13,9 @@
 - [Поддержка](https://t.me/HelpSupportMineBridgeBot)
 - [Видео-гайд как покупать проходку](https://t.me/MineBridgeOfficial/765)
 - [Моды, ресурс паки, сборки](https://майнбридж.рф/rules/mods)
+- [ТГ Канал](https://t.me/MineBridgeOfficial)
+- [Дискорд](https://discord.gg/rmWAuKGb69)
+- [ВК](https://vk.com/minebridge)
 
 # inline‑клавиатура
 
