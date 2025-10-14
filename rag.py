@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import logging
 import httpx
+import re
 from datetime import *
 import config
 import utils
@@ -51,6 +52,41 @@ def read_text_file(p: Path) -> str:
         logging.exception("RAG: failed to read %s", p)
         return ""
     
+
+def _clamp_priority(val: int | None) -> int:
+    try:
+        v = int(val) if val is not None else 5
+    except Exception:
+        v = 5
+    if v < 0:
+        return 0
+    if v > 10:
+        return 10
+    return v
+
+def _extract_priority_and_strip(text: str) -> tuple[int, str]:
+    """
+    Extracts RAG priority from top-of-file metadata and strips it from content.
+    Returns (priority, content_without_meta). Default priority is 5.
+    """
+    if not text:
+        return 5, ""
+
+    s = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    # Plain first non-empty line
+    first_lines = s.split("\n")[:50]
+    for i, line in enumerate(first_lines):
+        if not line.strip():
+            continue
+        m = re.match(r"(?i)^\s*(?:rag[-_ ]?priority|priority)\s*:\s*([0-9]{1,2})\s*$", line)
+        if m:
+            pr = _clamp_priority(int(m.group(1)))
+            rest = "\n".join(s.split("\n")[i+1:])
+            return pr, rest
+        break
+
+    return 5, s
 
 def split_chunks(text: str, size: int, ov: int) -> list[str]:
     """RU: Делит исходный текст на перекрывающиеся фрагменты для векторного индекса."""
@@ -107,11 +143,12 @@ async def _ensure_rag_index():
         all_texts = []
         for p in kb_files:
             txt = read_text_file(p)
-            parts = split_chunks(txt, config.RAG_CHUNK_SIZE, config.RAG_CHUNK_OVERLAP)
+            pr, clean = _extract_priority_and_strip(txt)
+            parts = split_chunks(clean, config.RAG_CHUNK_SIZE, config.RAG_CHUNK_OVERLAP)
             m = p.stat().st_mtime
             for i, ch in enumerate(parts):
                 cid = f"{utils.hash(str(p))}:{i}"
-                all_chunks.append({"id": cid, "file": str(p), "text": ch, "mtime": m})
+                all_chunks.append({"id": cid, "file": str(p), "text": ch, "mtime": m, "priority": pr})
                 all_texts.append(ch)
 
         vecs = []
@@ -134,7 +171,7 @@ async def _ensure_rag_index():
             RAG_CHUNKS, RAG_VECS, RAG_LOADED = [], None, True
             logging.warning("RAG: no chunks produced (empty kb?)")
 
-async def search(query: str, k: int = config.RAG_TOP_K):
+async def search(query: str):
     """RU: Возвращает top-k наиболее релевантных фрагментов из базы знаний."""
     await _ensure_rag_index()
     global RAG_VECS, RAG_CHUNKS
@@ -144,21 +181,25 @@ async def search(query: str, k: int = config.RAG_TOP_K):
     q = np.array([q_emb], dtype="float32")
     q /= max(np.linalg.norm(q), 1e-12)
     sims = (RAG_VECS @ q.T).reshape(-1)
-    top_idx = np.argsort(-sims)[:k]
-    return [(RAG_CHUNKS[i], float(sims[i])) for i in top_idx]
+    # Weight by file-level priority: map 0..10 -> ~0.1..2.0 multiplier
+    weights = np.array([
+        max(0.1, (float((c.get("priority", 5) or 5)) / 5.0))
+        for c in RAG_CHUNKS
+    ], dtype="float32")
+    adj = sims * weights
+    top_idx = np.argsort(-adj)[:config.RAG_TOP_K]
+    return [(RAG_CHUNKS[i], float(adj[i])) for i in top_idx]
 
 async def build_full_context(
     prompt: str,
-    id: str | None = None,
-    k: int = config.RAG_TOP_K,
-    max_chars: int = 2000,
+    id: str | None = None
 ) -> str:
     """RU: Собирает динамический контекст сервера, данные игрока и фрагменты RAG."""
     sections: list[str] = []
 
     # Start independent requests in parallel
     status_task = asyncio.create_task(mc.fetch_status())
-    search_task = asyncio.create_task(search(prompt, k=k))
+    search_task = asyncio.create_task(search(prompt))
     player_task = asyncio.create_task(mb_api.fetch_player_by_id(str(id))) if id else None
 
     # RU: Динамический контекст сервера
@@ -190,13 +231,9 @@ async def build_full_context(
             snippet = (ch.get("text") or "").strip()
             if not snippet:
                 continue
-            if total + len(snippet) > max_chars:
-                snippet = snippet[: max(0, max_chars - total)]
             if snippet:
                 kb_parts.append(snippet)
                 total += len(snippet)
-            if total >= max_chars:
-                break
         if kb_parts:
             sections.append("\n".join(kb_parts))
 

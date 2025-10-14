@@ -16,6 +16,8 @@
 - [ТГ Канал](https://t.me/MineBridgeOfficial)
 - [Дискорд](https://discord.gg/rmWAuKGb69)
 - [ВК](https://vk.com/minebridge)
+- [Ютуб](https://www.youtube.com/@minebridgeyt)
+- [ТикТок](https://www.tiktok.com/@minebridge)
 
 # inline‑клавиатура
 

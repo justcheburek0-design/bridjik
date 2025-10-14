@@ -370,6 +370,8 @@ async def auto_reply(message: types.Message):
                 rag_ctx = await rag.build_full_context(prompt, id)
             except Exception:
                 logging.exception("RAG: failed to build context")
+                
+            print(rag_ctx)
             
             answer = await handlers_helpers.complete_openai(
                 prompt,
