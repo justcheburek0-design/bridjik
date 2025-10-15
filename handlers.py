@@ -290,7 +290,7 @@ async def cmd_player(message: types.Message):
     try:
         player_info = await mb_api.fetch_player_by_id(str(id))
         if not player_info:
-            await msg.edit_text(f"😕 Игрок <code>{(id)}</code> не найден или произошла ошибка API.")
+            await msg.edit_text(f"😕 Игрок <code>{(id)}</code> не найден или произошла ошибка API\nПроверьте привязан ли ваш <a href='https://майнбридж.рф/auth'>телеграм к сайту</a>")
             return
         text = utils.format_player_info(player_info)
         await msg.edit_text(text)
