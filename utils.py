@@ -255,7 +255,6 @@ def should_answer(message: types.Message) -> bool:
     # RU: Если это reply — реагируем только если ответ адресован нашему боту
     if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
         replied_username = getattr(message.reply_to_message.from_user, "username", "") or ""
-        print(f"Replied to bot message from @{replied_username}")
         if bot_username and replied_username == (bot_username or ""):
             return True
         return False

@@ -136,6 +136,23 @@ async def cmd_start(message: types.Message):
         reply_markup=kb
     )
 
+@dp.message(Command("version"))
+async def cmd_version(message: types.Message):
+    """RU: Приветствие и предложение подписаться при необходимости."""
+    id = message.from_user.id
+    
+    if await is_subscribed(id):
+        await message.reply(f"Моя версия: <b>{version}</b>\nПоследнее обновление: <b>{last_update.strftime('%Y-%m-%d %H:%M:%S')}</b>")
+        return
+
+    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="Подписаться", url=f"https://t.me/{config.CHANNEL.lstrip('@')}")],
+        [types.InlineKeyboardButton(text="Проверить подписку", callback_data="check_subscription")]
+    ])
+    await message.answer(
+        "Для доступа нужен канал @MineBridgeOfficial — подпишитесь и нажмите «<b>Проверить подписку</b>»",
+        reply_markup=kb
+    )
 
 @dp.message(Command("support"))
 async def cmd_support(message: types.Message):
@@ -324,13 +341,11 @@ async def auto_reply(message: types.Message):
 
     # RU: Надёжно определяем тип чата (aiogram может вернуть enum или строку)
     chat_type = getattr(message.chat, "type", None)
-    print(chat_type)
     if isinstance(chat_type, str):
         ct_name = chat_type.upper()
     else:
         # RU: chat_type может быть Enum с .name или чем-то иным
         ct_name = getattr(chat_type, "name", str(chat_type)).upper()
-    print(chat_type)
     is_group = ct_name in ("GROUP", "SUPERGROUP")
 
     if is_group and not utils.should_answer(message):

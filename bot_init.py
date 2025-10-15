@@ -6,6 +6,7 @@ from aiogram.enums import ParseMode
 from openai import AsyncOpenAI
 from aiogram.client.default import DefaultBotProperties
 import config
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -15,3 +16,5 @@ openai_client = AsyncOpenAI(api_key=config.OPENAI_API_KEY, base_url="https://ope
 
 # RU: username будет установлен при запуске (on_startup)
 bot_username: str = "minebridge52bot"
+last_update = datetime.now()
+version = "15.10a"
