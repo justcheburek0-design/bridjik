@@ -1,2 +1,2 @@
 priority: 2
-Твой создатель - JustCheburek
+Твой создатель/разработчик - JustCheburek

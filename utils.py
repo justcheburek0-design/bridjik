@@ -157,9 +157,7 @@ def save_incoming_message(message: types.Message, text: str) -> None:
     author = _author_from(message)
     is_bot = bool(getattr(message.from_user, "is_bot", False))
     if not text:
-        if message.sticker:
-            text = f"Стикер: {message.sticker.file_id}"
-        elif message.photo:
+        if message.photo:
             text = f"Фото: {message.photo[-1].file_id}"
         elif message.document:
             text = f"Документ: {message.document.file_id}"
