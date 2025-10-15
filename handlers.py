@@ -324,11 +324,13 @@ async def auto_reply(message: types.Message):
 
     # RU: Надёжно определяем тип чата (aiogram может вернуть enum или строку)
     chat_type = getattr(message.chat, "type", None)
+    print(chat_type)
     if isinstance(chat_type, str):
         ct_name = chat_type.upper()
     else:
         # RU: chat_type может быть Enum с .name или чем-то иным
         ct_name = getattr(chat_type, "name", str(chat_type)).upper()
+    print(chat_type)
     is_group = ct_name in ("GROUP", "SUPERGROUP")
 
     if is_group and not utils.should_answer(message):
