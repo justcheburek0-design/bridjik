@@ -249,7 +249,7 @@ def load_system_prompt_for_chat(chat: types.Chat) -> str:
         logging.exception("Failed to load .txt prompt: %s", e)
     return "Пиши что я сегодня не смогу помочь, мой системный промт сломался."
 
-def should_answer(message: types.Message, bot_username: str | None = None) -> bool:
+def should_answer(message: types.Message) -> bool:
     """RU: Эвристически решает, нужно ли боту отвечать автоматически."""
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     # RU: Если это reply — реагируем только если ответ адресован нашему боту
