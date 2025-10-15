@@ -16,6 +16,7 @@ import mb_api
 import rag
 import handlers_helpers
 import msgs
+from aiogram.enums import ChatType
 
 # Проверка подписки пользователя на обязательный канал (использует объект bot)
 async def is_subscribed(id: int) -> bool:
@@ -174,6 +175,22 @@ async def cmd_donate(message: types.Message):
         reply_markup=kb
     )
 
+
+
+@dp.message(Command("game"))
+async def cmd_game(message: types.Message):
+    """Показывает список мини-игр (инлайн-клавиатура)."""
+    try:
+        if not await is_subscribed(message.from_user.id):
+            await message.reply("Подпишитесь на @MineBridgeOfficial, чтобы пользоваться ботом")
+            utils.save_incoming_message(message, message.text or "")
+            return
+        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="Угадай объект", callback_data="game:guess_object")],
+        ])
+        await message.reply("Выберите игру:", reply_markup=kb)
+    except Exception:
+        logging.exception("/game handler failed")
 @dp.message(Command("status"))
 # RU: Возвращает текущий статус Minecraft-сервера (через публичное API)
 async def cmd_status(message: types.Message):
@@ -263,6 +280,49 @@ async def callback_any(query: types.CallbackQuery):
         await query.answer(f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>")
         return
 
+    if data.startswith("game:"):
+        # Game callbacks
+        if data == "game:guess_object":
+            try:
+                try:
+                    await query.answer("Игра запущена")
+                except Exception:
+                    pass
+                name = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or (getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", ""))
+                use_msg = query.message
+                conv_key = (use_msg.chat.id, query.from_user.id)
+                sys_prompt = utils.load_system_prompt_for_chat(use_msg.chat)
+                sys_prompt += "\n\nФормат: возвращай только HTML для Telegram. Markdown не используй."
+                user_prompt = (
+                    "Начинай игру 'Угадай объект'. Выбери в уме один предмет (слово или короткая фраза). "
+                    "В свой первый ответ обязательно незаметно добавь служебную метку [[guess:СЛОВО]], где СЛОВО — выбранный предмет, "
+                    "а в основном тексте не раскрывай его и предложи мне начинать угадывать. Когда предмет будет отгадан или игра завершится, "
+                    "вставь [[guess:forgot]] в своём сообщении, чтобы завершить игру."
+                )
+                try:
+                    await bot.send_chat_action(chat_id=use_msg.chat.id, action="typing")
+                except Exception:
+                    pass
+                tmp = await use_msg.reply("🎲 Запускаю игру...")
+                answer = await handlers_helpers.complete_openai(
+                    user_prompt,
+                    name,
+                    conv_key,
+                    sys_prompt,
+                    None,
+                    use_msg,
+                )
+                await msgs.long_text(tmp, use_msg, answer or "Начинаем!")
+            except Exception:
+                logging.exception("game:guess_object failed")
+                try:
+                    if query.message:
+                        await query.message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
+                except Exception:
+                    pass
+            return
+        await query.answer()
+        return
     if data != "check_subscription":
         await query.answer()
         return

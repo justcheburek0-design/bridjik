@@ -1,4 +1,4 @@
-# utils.py
+﻿# utils.py
 from html import escape
 import re
 import hashlib
@@ -16,13 +16,50 @@ from aiogram.enums import ChatType
 import config
 from bot_init import *
 
-# ===== Per-user short history (диалоги пользователь↔ассистент) =====
+# ===== Per-user short history (РґРёР°Р»РѕРіРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЊв†”Р°СЃСЃРёСЃС‚РµРЅС‚) =====
 HistoryKey = Tuple[int, int]  # (chat_id, user_id)
 HISTORY: Dict[HistoryKey, Deque[Tuple[str, str]]] = defaultdict(
     lambda: deque(maxlen=config.DM_MAX_MESSAGES)
 )
 
-# JSON-персист для HISTORY
+# ===== Guessing game memory (per chat+user) =====
+_GUESSES: dict[str, str] = {}  # key as 'chat:user' -> object
+
+def _save_guesses() -> None:
+    try:
+        path = config.DATA_DIR / 'guesses.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(_GUESSES, ensure_ascii=False, indent=2), encoding='utf-8')
+    except Exception:
+        logging.exception('Failed to save GUESSES to JSON')
+
+def _load_guesses() -> None:
+    try:
+        path = config.DATA_DIR / 'guesses.json'
+        if not path.exists():
+            return
+        data = json.loads(path.read_text(encoding='utf-8') or '{}')
+        if isinstance(data, dict):
+            _GUESSES.clear()
+            for k, v in data.items():
+                if isinstance(k, str) and isinstance(v, str) and k and v:
+                    _GUESSES[k] = v
+    except Exception:
+        logging.exception('Failed to load GUESSES from JSON')
+
+def set_user_guess(key: HistoryKey, obj: str) -> None:
+    _GUESSES[_hist_key_str(key)] = (obj or '').strip()
+    _save_guesses()
+
+def get_user_guess(key: HistoryKey):
+    return _GUESSES.get(_hist_key_str(key))
+
+def clear_user_guess(key: HistoryKey) -> None:
+    _GUESSES.pop(_hist_key_str(key), None)
+    _save_guesses()
+
+
+# JSON-РїРµСЂСЃРёСЃС‚ РґР»СЏ HISTORY
 def _hist_key_str(key: HistoryKey) -> str:
     return f"{key[0]}:{key[1]}"
 
@@ -66,15 +103,15 @@ def _load_history() -> None:
     except Exception:
         logging.exception("Failed to load HISTORY from JSON")
 
-# ===== Per-chat raw history (последние сообщения чата) =====
-# Храним только необходимые поля, чтобы не тащить целый Message.
+# ===== Per-chat raw history (РїРѕСЃР»РµРґРЅРёРµ СЃРѕРѕР±С‰РµРЅРёСЏ С‡Р°С‚Р°) =====
+# РҐСЂР°РЅРёРј С‚РѕР»СЊРєРѕ РЅРµРѕР±С…РѕРґРёРјС‹Рµ РїРѕР»СЏ, С‡С‚РѕР±С‹ РЅРµ С‚Р°С‰РёС‚СЊ С†РµР»С‹Р№ Message.
 # (author, is_bot, text)
 ChatLine = Tuple[str, bool, str]
 CHAT_LOGS: Dict[int, Deque[ChatLine]] = defaultdict(
     lambda: deque(maxlen=config.GROUP_MAX_MESSAGES)
 )
 
-# JSON-персист для CHAT_LOGS
+# JSON-РїРµСЂСЃРёСЃС‚ РґР»СЏ CHAT_LOGS
 def _save_chat_logs() -> None:
     try:
         out: Dict[str, list[list[object]]] = {}
@@ -110,71 +147,76 @@ def _load_chat_logs() -> None:
 
 
 def _shorten(s: str, limit: int = 700) -> str:
-    """RU: Обрезает пробелы и длинные строки, добавляя многоточие."""
+    """RU: РћР±СЂРµР·Р°РµС‚ РїСЂРѕР±РµР»С‹ Рё РґР»РёРЅРЅС‹Рµ СЃС‚СЂРѕРєРё, РґРѕР±Р°РІР»СЏСЏ РјРЅРѕРіРѕС‚РѕС‡РёРµ."""
     s = (s or "").strip()
     return (s[:limit] + "...") if len(s) > limit else s
 
 def make_key(msg: types.Message) -> HistoryKey:
-    """RU: Формирует ключ истории на основе chat_id и user_id."""
+    """RU: Р¤РѕСЂРјРёСЂСѓРµС‚ РєР»СЋС‡ РёСЃС‚РѕСЂРёРё РЅР° РѕСЃРЅРѕРІРµ chat_id Рё user_id."""
     return (msg.chat.id, msg.from_user.id)
 
 def remember_user(key: HistoryKey, text: str) -> None:
-    """RU: Сохраняет краткую версию последнего сообщения пользователя."""
+    """RU: РЎРѕС…СЂР°РЅСЏРµС‚ РєСЂР°С‚РєСѓСЋ РІРµСЂСЃРёСЋ РїРѕСЃР»РµРґРЅРµРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."""
     HISTORY[key].append(("user", _shorten(text)))
     _save_history()
 
 def remember_assistant(key: HistoryKey, text: str) -> None:
-    """RU: Сохраняет краткий ответ ассистента для контекста."""
+    """RU: РЎРѕС…СЂР°РЅСЏРµС‚ РєСЂР°С‚РєРёР№ РѕС‚РІРµС‚ Р°СЃСЃРёСЃС‚РµРЅС‚Р° РґР»СЏ РєРѕРЅС‚РµРєСЃС‚Р°."""
     HISTORY[key].append(("assistant", _shorten(text)))
     _save_history()
 
 def build_input_with_history(key: HistoryKey, user_text: str, name: str) -> str:
-    """RU: Собирает короткую историю чата вместе с новым текстом пользователя."""
+    """РЎРѕР±РёСЂР°РµС‚ РІС…РѕРґ СЃ РєРѕСЂРѕС‚РєРѕР№ РёСЃС‚РѕСЂРёРµР№ РїРµСЂРµРїРёСЃРєРё (РґР»СЏ Р»РёС‡РєРё)."""
     lines: List[str] = []
     hist = HISTORY.get(key)
     if hist:
-        lines.append(f"Контекст предыдущих сообщений (до {config.DM_MAX_MESSAGES}):")
+        lines.append(f"РСЃС‚РѕСЂРёСЏ: РїРѕСЃР»РµРґРЅРёРµ (РґРѕ {config.DM_MAX_MESSAGES}):")
         for role, text in hist:
-            who = "Пользователь" if role == "user" else "Ассистент"
+            who = "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ" if role == "user" else "РђСЃСЃРёСЃС‚РµРЅС‚"
             lines.append(f"{who}: {text}")
-        lines.append("Конец контекста")
-    lines.append(f"Пользователь ({name}): {user_text}")
-    lines.append("Ассистент:")
+        lines.append("РљРѕРЅРµС† РёСЃС‚РѕСЂРёРё")
+    # Inject guessing game state
+    try:
+        _g = get_user_guess(key)
+        if _g:
+            lines.append("РРіСЂР° 'РЈРіР°РґР°Р№ РѕР±СЉРµРєС‚' Р°РєС‚РёРІРЅР°. Р—Р°РіР°РґР°РЅРЅС‹Р№ РѕР±СЉРµРєС‚: " + _g + ". РќРµ СЂР°СЃРєСЂС‹РІР°Р№ РѕС‚РІРµС‚ РЅР°РїСЂСЏРјСѓСЋ Рё РѕС†РµРЅРёРІР°Р№ РїРѕРїС‹С‚РєРё.")
+    except Exception:
+        pass
+    lines.append(f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ ({name}): {user_text}")
+    lines.append("РћС‚РІРµС‚:")
     return "\n".join(lines)
 
-# ====== СОХРАНЕНИЕ СООБЩЕНИЙ ЧАТА ======
-
 def _author_from(msg: types.Message) -> str:
-    """RU: Получает отображаемое имя автора из входящего сообщения."""
+    """RU: РџРѕР»СѓС‡Р°РµС‚ РѕС‚РѕР±СЂР°Р¶Р°РµРјРѕРµ РёРјСЏ Р°РІС‚РѕСЂР° РёР· РІС…РѕРґСЏС‰РµРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ."""
     user = getattr(msg, "from_user", None)
     if not user:
-        return "неизвестно"
-    return (getattr(user, "username", None) or getattr(user, "first_name", "") or "безымянный")
+        return "РЅРµРёР·РІРµСЃС‚РЅРѕ"
+    return (getattr(user, "username", None) or getattr(user, "first_name", "") or "Р±РµР·С‹РјСЏРЅРЅС‹Р№")
 
 def save_incoming_message(message: types.Message, text: str) -> None:
-    """RU: Записывает сообщение пользователя в буфер транскрипта чата."""
+    """RU: Р—Р°РїРёСЃС‹РІР°РµС‚ СЃРѕРѕР±С‰РµРЅРёРµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ Р±СѓС„РµСЂ С‚СЂР°РЅСЃРєСЂРёРїС‚Р° С‡Р°С‚Р°."""
     chat_id = message.chat.id
     author = _author_from(message)
     is_bot = bool(getattr(message.from_user, "is_bot", False))
     if not text:
         if message.photo:
-            text = f"Фото: {message.photo[-1].file_id}"
+            text = f"Р¤РѕС‚Рѕ: {message.photo[-1].file_id}"
         elif message.document:
-            text = f"Документ: {message.document.file_id}"
+            text = f"Р”РѕРєСѓРјРµРЅС‚: {message.document.file_id}"
         elif message.voice:
-            text = f"Голосовое сообщение (текст не распознан): {message.voice.file_id}"
+            text = f"Р“РѕР»РѕСЃРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ (С‚РµРєСЃС‚ РЅРµ СЂР°СЃРїРѕР·РЅР°РЅ): {message.voice.file_id}"
         elif message.video:
-            text = f"Видео: {message.video.file_id}"
+            text = f"Р’РёРґРµРѕ: {message.video.file_id}"
         elif message.audio:
-            text = f"Аудио: {message.audio.file_id}"
+            text = f"РђСѓРґРёРѕ: {message.audio.file_id}"
         elif message.sticker:
-            text = f"Стикер {message.sticker.emoji}: {message.sticker.file_id}"
+            text = f"РЎС‚РёРєРµСЂ {message.sticker.emoji}: {message.sticker.file_id}"
         else:
             return
     CHAT_LOGS[chat_id].append((author, is_bot, _shorten(text)))
     _save_chat_logs()
 
-def save_outgoing_message(chat_id: int, text: str, bot_display_name: str = "Ассистент") -> None:
+def save_outgoing_message(chat_id: int, text: str, bot_display_name: str = "РђСЃСЃРёСЃС‚РµРЅС‚") -> None:
     """Track what the bot answered so the transcript stays balanced."""
     if not text:
         return
@@ -186,30 +228,29 @@ async def build_input_from_chat_thread(
     user_text: str,
     name: str
 ) -> str:
-    # RU: Формирует вход для LLM из треда чата на основе последних сообщений
-    """
-    Формируем контекст из последних max_messages сообщений чата,
-    сохранённых локально в CHAT_LOGS (а не через reply_to_message и не через get_chat_history).
-    """
+    """Собирает вход из нитки чата (группы) с недавними репликами."""
     lines: List[str] = []
     chat_id = message.chat.id
-
-    # Берём последние max_messages сохранённых записей
     thread: List[ChatLine] = list(CHAT_LOGS.get(chat_id, deque()))[-config.GROUP_MAX_MESSAGES:]
-
     if thread:
-        lines.append("Контекст беседы среди разных игроков:")
+        lines.append("Контекст чата: последние сообщения:")
         for author, is_bot, text in thread:
             if not text:
                 continue
             role = "Ассистент" if is_bot else author
             lines.append(f"{role}: {text}")
         lines.append("Конец контекста")
-
+    # Inject guessing game state for group threads
+    try:
+        key = (message.chat.id, message.from_user.id)
+        _g = get_user_guess(key)
+        if _g:
+            lines.append("Игра 'Угадай объект' активна. Загаданный объект: " + _g + ". Не раскрывай ответ напрямую и оценивай попытки.")
+    except Exception:
+        pass
     lines.append(f"Пользователь ({name}): {user_text}")
-    lines.append("Ассистент:")
+    lines.append("Ответ:")
     return "\n".join(lines)
-
 def hash(s: str) -> str:
     """Helper that keeps short, deterministic hashes for filenames and IDs."""
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:10]
@@ -245,12 +286,12 @@ def load_system_prompt_for_chat(chat: types.Chat) -> str:
         logging.warning("Prompt .txt file not found; using builtin fallback")
     except Exception as e:
         logging.exception("Failed to load .txt prompt: %s", e)
-    return "Пиши что я сегодня не смогу помочь, мой системный промт сломался."
+    return "РџРёС€Рё С‡С‚Рѕ СЏ СЃРµРіРѕРґРЅСЏ РЅРµ СЃРјРѕРіСѓ РїРѕРјРѕС‡СЊ, РјРѕР№ СЃРёСЃС‚РµРјРЅС‹Р№ РїСЂРѕРјС‚ СЃР»РѕРјР°Р»СЃСЏ."
 
 def should_answer(message: types.Message) -> bool:
-    """RU: Эвристически решает, нужно ли боту отвечать автоматически."""
+    """RU: Р­РІСЂРёСЃС‚РёС‡РµСЃРєРё СЂРµС€Р°РµС‚, РЅСѓР¶РЅРѕ Р»Рё Р±РѕС‚Сѓ РѕС‚РІРµС‡Р°С‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё."""
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
-    # RU: Если это reply — реагируем только если ответ адресован нашему боту
+    # RU: Р•СЃР»Рё СЌС‚Рѕ reply вЂ” СЂРµР°РіРёСЂСѓРµРј С‚РѕР»СЊРєРѕ РµСЃР»Рё РѕС‚РІРµС‚ Р°РґСЂРµСЃРѕРІР°РЅ РЅР°С€РµРјСѓ Р±РѕС‚Сѓ
     if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
         replied_username = getattr(message.reply_to_message.from_user, "username", "") or ""
         if bot_username and replied_username == (bot_username or ""):
@@ -262,18 +303,18 @@ def should_answer(message: types.Message) -> bool:
                 mention_text = text[entity.offset: entity.offset + entity.length]
                 if bot_username and mention_text.lstrip("@").lower() == bot_username:
                     return True
-    BOT_ADDRESS_RE = re.compile(r'(?i)(?<!\w)(?:нейро-?бот(?:ик|яра)?|бот(?:ик|яра)?|бридж(?:ик)?)(?!\w)')
+    BOT_ADDRESS_RE = re.compile(r'(?i)(?<!\w)(?:РЅРµР№СЂРѕ-?Р±РѕС‚(?:РёРє|СЏСЂР°)?|Р±РѕС‚(?:РёРє|СЏСЂР°)?|Р±СЂРёРґР¶(?:РёРє)?)(?!\w)')
     if BOT_ADDRESS_RE.search(text):
         return True
     QUESTION_MARK_RE = re.compile(r'\?')
     INTERROGATIVE_RE = re.compile(
         r'(?i)\b('
-        r'можно ли|кто может помочь|кто поможет|подскаж(?:и|ите)|помогите|нужна помощь|help|помощь'
+        r'РјРѕР¶РЅРѕ Р»Рё|РєС‚Рѕ РјРѕР¶РµС‚ РїРѕРјРѕС‡СЊ|РєС‚Рѕ РїРѕРјРѕР¶РµС‚|РїРѕРґСЃРєР°Р¶(?:Рё|РёС‚Рµ)|РїРѕРјРѕРіРёС‚Рµ|РЅСѓР¶РЅР° РїРѕРјРѕС‰СЊ|help|РїРѕРјРѕС‰СЊ'
         r')\b'
     )
     COMMAND_RE = re.compile(
         r'(?i)\b('
-        r'объясни|расскажи|скажи|подскажи|помоги|проверь|сделай|напиши|создай|найди|покажи|настрой'
+        r'РѕР±СЉСЏСЃРЅРё|СЂР°СЃСЃРєР°Р¶Рё|СЃРєР°Р¶Рё|РїРѕРґСЃРєР°Р¶Рё|РїРѕРјРѕРіРё|РїСЂРѕРІРµСЂСЊ|СЃРґРµР»Р°Р№|РЅР°РїРёС€Рё|СЃРѕР·РґР°Р№|РЅР°Р№РґРё|РїРѕРєР°Р¶Рё|РЅР°СЃС‚СЂРѕР№'
         r')\b'
     )
     NOISE_RE = re.compile(r'^\s*(?:[^\w\s]|[\w]{1,2})\s*$')
@@ -322,7 +363,7 @@ def _load_freezes() -> None:
         logging.exception("Failed to load FREEZES from JSON")
 
 def _cleanup_freezes(now: Optional[float] = None) -> None:
-    """RU: Удаляет истёкшие записи заморозки, поддерживая кэш в актуальном состоянии."""
+    """RU: РЈРґР°Р»СЏРµС‚ РёСЃС‚С‘РєС€РёРµ Р·Р°РїРёСЃРё Р·Р°РјРѕСЂРѕР·РєРё, РїРѕРґРґРµСЂР¶РёРІР°СЏ РєСЌС€ РІ Р°РєС‚СѓР°Р»СЊРЅРѕРј СЃРѕСЃС‚РѕСЏРЅРёРё."""
     if now is None:
         now = time.time()
     expired = [uid for uid, ts in _USER_FREEZES.items() if ts <= now]
@@ -334,21 +375,21 @@ def _cleanup_freezes(now: Optional[float] = None) -> None:
         _save_freezes()
 
 def set_user_freeze(user_id: int, hours: int) -> float:
-    """RU: Включает заморозку автоответов для пользователя на указанное число часов."""
+    """RU: Р’РєР»СЋС‡Р°РµС‚ Р·Р°РјРѕСЂРѕР·РєСѓ Р°РІС‚РѕРѕС‚РІРµС‚РѕРІ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РЅР° СѓРєР°Р·Р°РЅРЅРѕРµ С‡РёСЃР»Рѕ С‡Р°СЃРѕРІ."""
     expires_at = time.time() + hours * 3600
     _USER_FREEZES[user_id] = expires_at
     _save_freezes()
     return expires_at
 
 def clear_user_freeze(user_id: int) -> bool:
-    """RU: Снимает заморозку, если она была; возвращает факт изменения."""
+    """RU: РЎРЅРёРјР°РµС‚ Р·Р°РјРѕСЂРѕР·РєСѓ, РµСЃР»Рё РѕРЅР° Р±С‹Р»Р°; РІРѕР·РІСЂР°С‰Р°РµС‚ С„Р°РєС‚ РёР·РјРµРЅРµРЅРёСЏ."""
     removed = _USER_FREEZES.pop(user_id, None) is not None
     if removed:
         _save_freezes()
     return removed
 
 def get_user_freeze(user_id: int) -> Optional[float]:
-    """RU: Возвращает UNIX-время окончания заморозки (или None)."""
+    """RU: Р’РѕР·РІСЂР°С‰Р°РµС‚ UNIX-РІСЂРµРјСЏ РѕРєРѕРЅС‡Р°РЅРёСЏ Р·Р°РјРѕСЂРѕР·РєРё (РёР»Рё None)."""
     _cleanup_freezes()
     expires_at = _USER_FREEZES.get(user_id)
     if expires_at is None:
@@ -359,27 +400,27 @@ def get_user_freeze(user_id: int) -> Optional[float]:
     return expires_at
 
 def is_user_frozen(user_id: int) -> bool:
-    """RU: Проверяет, есть ли у пользователя активная заморозка."""
+    """RU: РџСЂРѕРІРµСЂСЏРµС‚, РµСЃС‚СЊ Р»Рё Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Р°РєС‚РёРІРЅР°СЏ Р·Р°РјРѕСЂРѕР·РєР°."""
     return get_user_freeze(user_id) is not None
 
 
 def get_hour_string(hours: int) -> str:
-    """RU: Форматирует количество часов человекочитаемой строкой."""
-    return f"{hours} час" if hours == 1 else f"{hours} часа"
+    """RU: Р¤РѕСЂРјР°С‚РёСЂСѓРµС‚ РєРѕР»РёС‡РµСЃС‚РІРѕ С‡Р°СЃРѕРІ С‡РµР»РѕРІРµРєРѕС‡РёС‚Р°РµРјРѕР№ СЃС‚СЂРѕРєРѕР№."""
+    return f"{hours} С‡Р°СЃ" if hours == 1 else f"{hours} С‡Р°СЃР°"
 
 
 def format_player_info(info: dict) -> str:
-    """RU: Форматирует профиль MineBridge в безопасный для Telegram HTML."""
-    # Порядок полей
+    """RU: Р¤РѕСЂРјР°С‚РёСЂСѓРµС‚ РїСЂРѕС„РёР»СЊ MineBridge РІ Р±РµР·РѕРїР°СЃРЅС‹Р№ РґР»СЏ Telegram HTML."""
+    # РџРѕСЂСЏРґРѕРє РїРѕР»РµР№
     lines = []
     
     for key, value in info.items():
-        if key == "Роли":
-            roles_lines = "\n".join(f"• {escape(str(r))}" for r in value)
+        if key == "Р РѕР»Рё":
+            roles_lines = "\n".join(f"вЂў {escape(str(r))}" for r in value)
             lines.append(f"{escape(key)}:\n{roles_lines}")
 
         else:
-            # прочие простые поля и ссылки
+            # РїСЂРѕС‡РёРµ РїСЂРѕСЃС‚С‹Рµ РїРѕР»СЏ Рё СЃСЃС‹Р»РєРё
             lines.append(f"{escape(key)}: <code>{escape(str(value))}</code>")
 
     return "\n".join(lines)
@@ -444,7 +485,7 @@ def display_name(user: types.User, prefer_username: bool = False) -> str:
     """
     try:
         if user is None:
-            return "Пользователь"
+            return "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"
         uid = getattr(user, "id", None)
         if uid is not None:
             pn = get_user_psevdo(int(uid))
@@ -463,4 +504,6 @@ def display_name(user: types.User, prefer_username: bool = False) -> str:
             return str(name)
     except Exception:
         pass
-    return "Пользователь"
+    return "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"
+
+

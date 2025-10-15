@@ -14,12 +14,13 @@ import httpx
 from config import PIXABAY_API_KEY
 import config
 import bot_init
+import utils
 
 
 PHOTO_TAG_RE = re.compile(r"\[\[photo:([^\]]+)\]\]", re.IGNORECASE)
 STICKER_TAG_RE = re.compile(r"\[\[sticker:([^\]]+)\]\]", re.IGNORECASE)
 # RU: Универсальный парсер медиа-тегов, чтобы сохранять порядок в тексте
-MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb):([^\]]+)\]\]", re.IGNORECASE)
+MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb|guess):([^\]]+)\]\]", re.IGNORECASE)
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
 _IMAGE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -339,6 +340,17 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
                     pending_kb = kb
             except Exception:
                 logging.exception("failed to set reply markup (keyboard)")
+        elif kind == "guess":
+            # hidden control tag: remember or forget guessed object for this chat/user
+            try:
+                key = utils.make_key(user_msg)
+                pl = (payload or "").strip()
+                if pl.lower() in ("forgot", "forget", "stop"):
+                    utils.clear_user_guess(key)
+                else:
+                    utils.set_user_guess(key, pl)
+            except Exception:
+                logging.exception("failed to process [[guess:...]] tag")
 
     if first_text_pending:
         try:
