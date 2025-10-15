@@ -254,10 +254,10 @@ def should_answer(message: types.Message) -> bool:
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     # RU: Если это reply — реагируем только если ответ адресован нашему боту
     if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
-        replied_username = (getattr(message.reply_to_message.from_user, "username", "") or "").lower()
-        if bot_username and replied_username == (bot_username or "").lower():
+        replied_username = getattr(message.reply_to_message.from_user, "username", "") or ""
+        print(f"Replied to bot message from @{replied_username}")
+        if bot_username and replied_username == (bot_username or ""):
             return True
-        # Reply to a different bot — do not trigger autoreply
         return False
     if message.entities and text:
         for entity in message.entities:
