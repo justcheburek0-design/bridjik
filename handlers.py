@@ -185,9 +185,15 @@ async def cmd_game(message: types.Message):
             await message.reply("Подпишитесь на @MineBridgeOfficial, чтобы пользоваться ботом")
             utils.save_incoming_message(message, message.text or "")
             return
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="Угадай объект", callback_data="game:guess_object")],
-        ])
+        # Build keyboard: always offer to start the game; if active, also offer to stop
+        try:
+            active = bool(utils.get_user_guess((message.chat.id, message.from_user.id)))
+        except Exception:
+            active = False
+        rows = [[types.InlineKeyboardButton(text="Угадай объект", callback_data="game:guess_object")]]
+        if active:
+            rows.append([types.InlineKeyboardButton(text="Остановить игру", callback_data="game:guess_stop")])
+        kb = types.InlineKeyboardMarkup(inline_keyboard=rows)
         await message.reply("Выберите игру:", reply_markup=kb)
     except Exception:
         logging.exception("/game handler failed")
@@ -320,6 +326,22 @@ async def callback_any(query: types.CallbackQuery):
                         await query.message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
                 except Exception:
                     pass
+            return
+
+        elif data == "game:guess_stop":
+            try:
+                await query.answer("Останавливаю игру")
+            except Exception:
+                pass
+            try:
+                if query.message:
+                    conv_key = (query.message.chat.id, query.from_user.id)
+                    utils.clear_user_guess(conv_key)
+                    await query.message.reply("Игра завершена. Чтобы начать заново — /game.")
+                else:
+                    utils.clear_user_guess((0, query.from_user.id))
+            except Exception:
+                logging.exception("game:guess_stop failed")
             return
         await query.answer()
         return
@@ -511,3 +533,5 @@ async def auto_reply(message: types.Message):
             await msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
         except Exception:
             pass
+
+
