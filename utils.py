@@ -470,6 +470,7 @@ def get_user_psevdo(user_id: int) -> Optional[str]:
 # Initialize on import
 _load_history()
 _load_chat_logs()
+_load_guesses()
 _load_freezes()
 _load_psevdos()
 
@@ -505,5 +506,6 @@ def display_name(user: types.User, prefer_username: bool = False) -> str:
     except Exception:
         pass
     return "Пользователь"
+
 
 

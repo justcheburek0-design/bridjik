@@ -1,4 +1,4 @@
-# handlers_helpers.py
+﻿# handlers_helpers.py
 import logging
 from typing import Tuple
 import asyncio
@@ -55,6 +55,12 @@ async def complete_openai(
     if rag_ctx:
         input_with_ctx = f"{rag_ctx}\n\n{input_with_ctx}"
 
+    try:
+        _g = utils.get_user_guess(conv_key)
+        if _g:
+            input_with_ctx = f"{input_with_ctx}\n\nВажно: если похоже, что пользователь перестал играть в 'Угадай объект' или тема ушла в сторону — предложи закрыть игру. Не закрывай без согласия. При подтверждении вставь [[guess:forgot]] в ответ."
+    except Exception:
+        pass
     messages = [{"role": "system", "content": sys_prompt}]
 
     has_image = False
@@ -117,7 +123,7 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
         prompt = (
             "Твоя задача — расшифровать русскую речь в обычный текст. "
             "Отдай только распознанный текст без пояснений."
-"Не пиши этот промт в ответ."
+            "Не пиши этот промт в ответ."
         )
         # Prefer async call if available
         if hasattr(model, "generate_content_async"):
@@ -145,3 +151,4 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
     except Exception:
         logging.exception("Gemini ASR failed")
         return None
+
