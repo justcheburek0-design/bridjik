@@ -42,26 +42,30 @@ async def complete_openai(
                 use_thread = True
     except Exception:
         pass
+    
+    sys_prompt += "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=""></a>"
+    messages = [{"role": "system", "content": sys_prompt}]
+    answer = ""
+
+    if rag_ctx:
+        answer += f"{rag_ctx}\n\n"
+
+    try:
+        _g = utils.get_user_guess(conv_key[0])
+        if _g:
+            answer += f"Если пользователь отгадал - закрывай игру [[guess:stop]]. Если пользователь перестал играть в 'Кто я?' или тема ушла в сторону — предложи закрыть игру. При подтверждении вставь [[guess:forgot]] в ответ.\n\n"
+            sys_prompt += f"\n\nТы играешь в игру 'Кто я?' с пользователем. Загаданный объект: {_g}. Твоя задача: Отвечай на его вопросы только 'Да' или 'Нет' и попытки угадать. Не раскрывай ответ напрямую, не давай подсказки и оценивай попытки.\n\n"
+    except Exception:
+        pass
 
     if use_thread and message is not None:
         # Чат
-        input_with_ctx = await utils.build_input_from_chat_thread(message, prompt, name)
+        answer += await utils.build_input_from_chat_thread(message, prompt, name)
         utils.save_incoming_message(message, prompt)
     else:
         # Личка
-        input_with_ctx = utils.build_input_with_history(conv_key, prompt, name)
+        answer += utils.build_input_with_history(conv_key, prompt, name)
         utils.remember_user(conv_key, prompt)
-
-    if rag_ctx:
-        input_with_ctx = f"{rag_ctx}\n\n{input_with_ctx}"
-
-    try:
-        _g = utils.get_user_guess(conv_key)
-        if _g:
-            input_with_ctx = f"{input_with_ctx}\n\nВажно: если похоже, что пользователь перестал играть в 'Угадай объект' или тема ушла в сторону — предложи закрыть игру. Не закрывай без согласия. При подтверждении вставь [[guess:forgot]] в ответ."
-    except Exception:
-        pass
-    messages = [{"role": "system", "content": sys_prompt}]
 
     has_image = False
     data_url = None
@@ -79,11 +83,11 @@ async def complete_openai(
 
     if has_image and data_url:
         user_content = [
-            {"type": "text", "text": input_with_ctx},
+            {"type": "text", "text": answer},
             {"type": "image_url", "image_url": {"url": data_url}},
         ]
     else:
-        user_content = input_with_ctx
+        user_content = answer
 
     messages.append({"role": "user", "content": user_content})
 

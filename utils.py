@@ -22,40 +22,69 @@ HISTORY: Dict[HistoryKey, Deque[Tuple[str, str]]] = defaultdict(
     lambda: deque(maxlen=config.DM_MAX_MESSAGES)
 )
 
-# ===== Guessing game memory (per chat+user) =====
-_GUESSES: dict[str, str] = {}  # key as 'chat:user' -> object
+# ===== Guessing game memory (per chat) =====
+# Store by chat only, so multiple users in a chat share the same guess state.
+_GUESSES: dict[str, str] = {}  # key as chat_id (str) -> object
+
+def _chat_key(key_or_chat: "HistoryKey | int") -> str:
+    """Return canonical string key for chat-based storage.
+
+    Accepts either a `(chat_id, user_id)` tuple (legacy calls) or an `int` chat_id.
+    """
+    try:
+        if isinstance(key_or_chat, tuple):
+            return str(int(key_or_chat[0]))
+        return str(int(key_or_chat))
+    except Exception:
+        # Fallback to string; ensures we don't crash on odd inputs
+        return str(key_or_chat)
 
 def _save_guesses() -> None:
     try:
-        path = config.DATA_DIR / 'guesses.json'
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(_GUESSES, ensure_ascii=False, indent=2), encoding='utf-8')
+        config.GUESSES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.GUESSES_FILE.write_text(
+            json.dumps(_GUESSES, ensure_ascii=False, indent=2), encoding='utf-8'
+        )
     except Exception:
         logging.exception('Failed to save GUESSES to JSON')
 
 def _load_guesses() -> None:
     try:
-        path = config.DATA_DIR / 'guesses.json'
-        if not path.exists():
+        if not config.GUESSES_FILE.exists():
             return
-        data = json.loads(path.read_text(encoding='utf-8') or '{}')
+        raw = config.GUESSES_FILE.read_text(encoding='utf-8') or '{}'
+        data = json.loads(raw)
         if isinstance(data, dict):
             _GUESSES.clear()
             for k, v in data.items():
-                if isinstance(k, str) and isinstance(v, str) and k and v:
-                    _GUESSES[k] = v
+                if not isinstance(v, str) or not v:
+                    continue
+                # Backward compat: previously keys were 'chat:user'.
+                if isinstance(k, str) and ":" in k:
+                    chat, _sep, _user = k.partition(":")
+                    k = chat
+                # Normalize to string chat id
+                try:
+                    chat_key = str(int(k))
+                except Exception:
+                    chat_key = str(k)
+                _GUESSES[chat_key] = v
     except Exception:
         logging.exception('Failed to load GUESSES from JSON')
 
-def set_user_guess(key: HistoryKey, obj: str) -> None:
-    _GUESSES[_hist_key_str(key)] = (obj or '').strip()
+def set_user_guess(key_or_chat: "HistoryKey | int", obj: str) -> None:
+    """Remember guessed object for a chat.
+
+    Accepts either a `(chat_id, user_id)` tuple (legacy) or `chat_id` int.
+    """
+    _GUESSES[_chat_key(key_or_chat)] = (obj or '').strip()
     _save_guesses()
 
-def get_user_guess(key: HistoryKey):
-    return _GUESSES.get(_hist_key_str(key))
+def get_user_guess(key_or_chat: "HistoryKey | int"):
+    return _GUESSES.get(_chat_key(key_or_chat))
 
-def clear_user_guess(key: HistoryKey) -> None:
-    _GUESSES.pop(_hist_key_str(key), None)
+def clear_user_guess(key_or_chat: "HistoryKey | int") -> None:
+    _GUESSES.pop(_chat_key(key_or_chat), None)
     _save_guesses()
 
 
@@ -175,13 +204,6 @@ def build_input_with_history(key: HistoryKey, user_text: str, name: str) -> str:
             who = "Пользователь" if role == "user" else "Ассистент"
             lines.append(f"{who}: {text}")
         lines.append("Конец истории")
-    # Inject guessing game state
-    try:
-        _g = get_user_guess(key)
-        if _g:
-            lines.append("гра 'Угадай объект' активна. Загаданный объект: " + _g + ". Не раскрывай ответ напрямую и оценивай попытки.")
-    except Exception:
-        pass
     lines.append(f"Пользователь ({name}): {user_text}")
     lines.append("Ответ:")
     return "\n".join(lines)
@@ -240,14 +262,6 @@ async def build_input_from_chat_thread(
             role = "Ассистент" if is_bot else author
             lines.append(f"{role}: {text}")
         lines.append("Конец контекста")
-    # Inject guessing game state for group threads
-    try:
-        key = (message.chat.id, message.from_user.id)
-        _g = get_user_guess(key)
-        if _g:
-            lines.append("Игра 'Угадай объект' активна. Загаданный объект: " + _g + ". Не раскрывай ответ напрямую и оценивай попытки.")
-    except Exception:
-        pass
     lines.append(f"Пользователь ({name}): {user_text}")
     lines.append("Ответ:")
     return "\n".join(lines)

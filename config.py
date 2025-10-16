@@ -35,6 +35,7 @@ PSEVDO_FILE = DATA_DIR / "psevdos.json"
 HISTORY_FILE = DATA_DIR / "history.json"
 CHAT_LOGS_FILE = DATA_DIR / "chat_logs.json"
 FREEZES_FILE = DATA_DIR / "freezes.json"
+GUESSES_FILE = DATA_DIR / "guesses.json"
 RAG_CHUNK_SIZE = 900
 RAG_CHUNK_OVERLAP = 150
 RAG_TOP_K = 6

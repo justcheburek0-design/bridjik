@@ -16,4 +16,4 @@ openai_client = AsyncOpenAI(api_key=config.OPENAI_API_KEY, base_url="https://ope
 
 bot_username: str = "minebridge52bot"
 last_update = datetime.now()
-version = "15.10d"
+version = "16.10a"

@@ -264,6 +264,9 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
             actions.append(("sticker", payload))
         elif kind == "kb":
             actions.append(("kb", payload))
+        elif kind == "guess":
+            # hidden control tag to persist user's guessed object
+            actions.append(("guess", payload))
         pos = m.end()
     if pos < len(text):
         actions.append(("text", text[pos:]))
@@ -341,14 +344,14 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
             except Exception:
                 logging.exception("failed to set reply markup (keyboard)")
         elif kind == "guess":
-            # hidden control tag: remember or forget guessed object for this chat/user
+            # hidden control tag: remember or forget guessed object for this chat
             try:
-                key = utils.make_key(user_msg)
+                chat_id = user_msg.chat.id
                 pl = (payload or "").strip()
                 if pl.lower() in ("forgot", "forget", "stop"):
-                    utils.clear_user_guess(key)
+                    utils.clear_user_guess(chat_id)
                 else:
-                    utils.set_user_guess(key, pl)
+                    utils.set_user_guess(chat_id, pl)
             except Exception:
                 logging.exception("failed to process [[guess:...]] tag")
 

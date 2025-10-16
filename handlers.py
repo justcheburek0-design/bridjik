@@ -187,10 +187,10 @@ async def cmd_game(message: types.Message):
             return
         # Build keyboard: always offer to start the game; if active, also offer to stop
         try:
-            active = bool(utils.get_user_guess((message.chat.id, message.from_user.id)))
+            active = bool(utils.get_user_guess(message.chat.id))
         except Exception:
             active = False
-        rows = [[types.InlineKeyboardButton(text="Угадай объект", callback_data="game:guess_object")]]
+        rows = [[types.InlineKeyboardButton(text="Кто я?", callback_data="game:guess_object")]]
         if active:
             rows.append([types.InlineKeyboardButton(text="Остановить игру", callback_data="game:guess_stop")])
         kb = types.InlineKeyboardMarkup(inline_keyboard=rows)
@@ -229,6 +229,7 @@ async def callback_any(query: types.CallbackQuery):
         getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", "")
     )
     data = (query.data or "").strip()
+    message = query.message
 
     if data.startswith("freeze:"):
         parts = data.split(":")
@@ -252,8 +253,8 @@ async def callback_any(query: types.CallbackQuery):
         id = query.from_user.id
         utils.set_user_freeze(id, hours)
         try:
-            if query.message:
-                await query.message.edit_text(
+            if message:
+                await message.edit_text(
                     f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{utils.get_hour_string(hours)}</b>",
                     reply_markup=_build_freeze_keyboard(id),
                 )
@@ -276,8 +277,8 @@ async def callback_any(query: types.CallbackQuery):
         utils.clear_user_freeze(id)
         
         try:
-            if query.message:
-                await query.message.edit_text(
+            if message:
+                await message.edit_text(
                     f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>",
                     reply_markup=_build_freeze_keyboard(id, hot=False),
                 )
@@ -295,35 +296,43 @@ async def callback_any(query: types.CallbackQuery):
                 except Exception:
                     pass
                 name = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or (getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", ""))
-                use_msg = query.message
-                conv_key = (use_msg.chat.id, query.from_user.id)
-                sys_prompt = utils.load_system_prompt_for_chat(use_msg.chat)
-                sys_prompt += "\n\nФормат: возвращай только HTML для Telegram. Markdown не используй."
-                user_prompt = (
-                    "Начинай игру 'Угадай объект'. Выбери в уме один предмет из майнкрафта (моб, предмет, существо, gui интерфейс, событие по типу дождя и другое). "
-                    "В свой первый ответ обязательно незаметно добавь служебную метку [[guess:СЛОВО]], где СЛОВО — выбранный предмет, "
-                    "а в основном тексте не раскрывай его и предложи мне начинать угадывать. Когда предмет будет отгадан или игра завершится, "
-                    "вставь [[guess:forgot]] в своём сообщении, чтобы завершить игру."
+                conv_key = (message.chat.id, query.from_user.id)
+                rag_ctx = ""
+                id = getattr(message.from_user, "id", None)
+                sys_prompt = utils.load_system_prompt_for_chat(message.chat)
+                prompt = (
+                    "Начинай игру 'Кто я?'. Выбери в уме один предмет из майнкрафта (моб, предмет, существо, gui интерфейс, событие по типу дождя и другое). "
+                    "В свой первый ответ обязательно незаметно добавь служебную метку [[guess:СЛОВО]], где СЛОВО — выбранный предмет на русском языке, "
+                    "а в основном тексте не раскрывай его и предложи мне начинать угадывать. Предмет должен быть тяжёлым для отгадывания, не очевиден."
                 )
+                utils.save_incoming_message(message, prompt)
+                
                 try:
-                    await bot.send_chat_action(chat_id=use_msg.chat.id, action="typing")
+                    await bot.send_chat_action(chat_id=message.chat.id, action="typing")
                 except Exception:
                     pass
-                tmp = await use_msg.reply("🎲 Запускаю игру...")
+                
+                try:
+                    # Получаем RAG контекст (если включён)
+                    rag_ctx = await rag.build_full_context(prompt, id)
+                except Exception:
+                    logging.exception("RAG: failed to build context")
+                
+                tmp = await message.reply("🎲 Запускаю игру...")
                 answer = await handlers_helpers.complete_openai(
-                    user_prompt,
+                    prompt,
                     name,
                     conv_key,
                     sys_prompt,
-                    None,
-                    use_msg,
+                    rag_ctx,
+                    message,
                 )
-                await msgs.long_text(tmp, use_msg, answer or "Начинаем!")
-            except Exception:
-                logging.exception("game:guess_object failed")
+                await msgs.long_text(tmp, message, answer)
+            except Exception as e:
+                logging.exception(f"game:guess_object failed\n{e}")
                 try:
-                    if query.message:
-                        await query.message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
+                    if message:
+                        await message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
                 except Exception:
                     pass
             return
@@ -334,12 +343,11 @@ async def callback_any(query: types.CallbackQuery):
             except Exception:
                 pass
             try:
-                if query.message:
-                    conv_key = (query.message.chat.id, query.from_user.id)
-                    utils.clear_user_guess(conv_key)
-                    await query.message.reply("Игра завершена. Чтобы начать заново — /game.")
+                if message:
+                    utils.clear_user_guess(message.chat.id)
+                    await message.reply("Игра завершена. Чтобы начать заново — /game.")
                 else:
-                    utils.clear_user_guess((0, query.from_user.id))
+                    pass
             except Exception:
                 logging.exception("game:guess_stop failed")
             return
@@ -350,9 +358,9 @@ async def callback_any(query: types.CallbackQuery):
         return
 
     if await is_subscribed(query.from_user.id):
-        await query.message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
     else:
-        await query.message.reply("Подписка не найдена! Убедитесь, что подписаны на канал", show_alert=True)
+        await message.reply("Подписка не найдена! Убедитесь, что подписаны на канал", show_alert=True)
 
 @dp.message(Command("player"))
  # RU: Команда /player — получить данные игрока по нику (или @username)
@@ -459,7 +467,6 @@ async def auto_reply(message: types.Message):
         conv_key = utils.make_key(message)
 
         sys_prompt = utils.load_system_prompt_for_chat(message.chat)
-        sys_prompt += "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=""></a>"
 
         rag_ctx = ""
         
