@@ -118,11 +118,10 @@ async def cmd_start(message: types.Message):
     """RU: Приветствие и предложение подписаться при необходимости."""
     id = message.from_user.id
     # Имя для приветствия: псевдоним (если есть), иначе @username, иначе имя
-    username = getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
-    psevdo = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or username
+    username = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or getattr(message.from_user, "username", "") or getattr(message.from_user, "first_name", None)
     
     if await is_subscribed(id):
-        await message.reply(f"Привет, {psevdo}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
         return
 
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -221,8 +220,7 @@ async def cmd_rag_reindex(message: types.Message):
 @dp.callback_query()
 async def callback_any(query: types.CallbackQuery):
     """RU: Обрабатывает коллбеки: freeze/unfreeze и проверку подписки."""
-    username = getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", "")
-    psevdo = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or username
+    username = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or getattr(query.from_user, "username", "") or getattr(query.from_user, "first_name", None)
     
     data = (query.data or "").strip()
     message = query.message
@@ -251,12 +249,12 @@ async def callback_any(query: types.CallbackQuery):
         try:
             if message:
                 await message.edit_text(
-                    f"🔐 Авто-ответы <b>выключены</b> для <b>{psevdo}</b> на <b>{utils.get_hour_string(hours)}</b>",
+                    f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{utils.get_hour_string(hours)}</b>",
                     reply_markup=_build_freeze_keyboard(id),
                 )
         except Exception:
             logging.exception("freeze: failed to edit confirmation message")
-        await query.answer(f"🔐 Авто-ответы <b>выключены</b> для <b>{psevdo}</b> на <b>{utils.get_hour_string(hours)}</b>")
+        await query.answer(f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{utils.get_hour_string(hours)}</b>")
         return
 
     if data.startswith("unfreeze:"):
@@ -275,12 +273,12 @@ async def callback_any(query: types.CallbackQuery):
         try:
             if message:
                 await message.edit_text(
-                    f"🔑 Авто-ответы <b>включены</b> для <b>{psevdo}</b>",
+                    f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>",
                     reply_markup=_build_freeze_keyboard(id, hot=False),
                 )
         except Exception:
             logging.exception("unfreeze: failed to edit confirmation message")
-        await query.answer(f"🔑 Авто-ответы <b>включены</b> для <b>{psevdo}</b>")
+        await query.answer(f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>")
         return
 
     if data.startswith("game:"):
@@ -353,7 +351,7 @@ async def callback_any(query: types.CallbackQuery):
         return
 
     if await is_subscribed(query.from_user.id):
-        await message.reply(f"Привет, {psevdo}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
     else:
         await message.reply("Подписка не найдена! Убедитесь, что подписаны на канал", show_alert=True)
 
@@ -390,8 +388,7 @@ async def auto_reply(message: types.Message):
     has_image_doc = bool(getattr(message, "document", None) and str(getattr(message.document, "mime_type", "")).startswith("image/"))
     has_image = has_photo or has_image_doc
     has_voice = bool(getattr(message, "voice", None)) or bool(getattr(message, "audio", None) and str(getattr(message.audio, "mime_type", "")).startswith("audio/"))
-    username = getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
-    # psevdo = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or username
+    username = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or getattr(message.from_user, "username", "") or getattr(message.from_user, "first_name", None)
 
     # Voice transcription (runs even if bot is not addressed)
     if has_voice:
