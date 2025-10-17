@@ -201,6 +201,10 @@ async def build_full_context(
     status_task = asyncio.create_task(mc.fetch_status())
     search_task = asyncio.create_task(search(prompt))
     player_task = asyncio.create_task(mb_api.fetch_player_by_id(str(id))) if id else None
+    
+    psevdo = utils.get_user_psevdo(id)
+    if psevdo:
+        sections.append(f"Обращайся к игроку: '<b>{psevdo}</b>'\n")
 
     # RU: Динамический контекст сервера
     try:

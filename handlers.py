@@ -118,14 +118,11 @@ async def cmd_start(message: types.Message):
     """RU: Приветствие и предложение подписаться при необходимости."""
     id = message.from_user.id
     # Имя для приветствия: псевдоним (если есть), иначе @username, иначе имя
-    _p = utils.get_user_psevdo(id)
-    if _p:
-        greet_name = _p
-    else:
-        _u = getattr(message.from_user, "username", None)
-        greet_name = f"@{_u}" if _u else (message.from_user.first_name or "")
+    username = getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
+    psevdo = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or username
+    
     if await is_subscribed(id):
-        await message.reply(f"Привет, {greet_name}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {psevdo}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
         return
 
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -175,8 +172,6 @@ async def cmd_donate(message: types.Message):
         reply_markup=kb
     )
 
-
-
 @dp.message(Command("game"))
 async def cmd_game(message: types.Message):
     """Показывает список мини-игр (инлайн-клавиатура)."""
@@ -197,6 +192,7 @@ async def cmd_game(message: types.Message):
         await message.reply("Выберите игру:", reply_markup=kb)
     except Exception:
         logging.exception("/game handler failed")
+        
 @dp.message(Command("status"))
 # RU: Возвращает текущий статус Minecraft-сервера (через публичное API)
 async def cmd_status(message: types.Message):
@@ -225,9 +221,9 @@ async def cmd_rag_reindex(message: types.Message):
 @dp.callback_query()
 async def callback_any(query: types.CallbackQuery):
     """RU: Обрабатывает коллбеки: freeze/unfreeze и проверку подписки."""
-    username = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or (
-        getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", "")
-    )
+    username = getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", "")
+    psevdo = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or username
+    
     data = (query.data or "").strip()
     message = query.message
 
@@ -255,12 +251,12 @@ async def callback_any(query: types.CallbackQuery):
         try:
             if message:
                 await message.edit_text(
-                    f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{utils.get_hour_string(hours)}</b>",
+                    f"🔐 Авто-ответы <b>выключены</b> для <b>{psevdo}</b> на <b>{utils.get_hour_string(hours)}</b>",
                     reply_markup=_build_freeze_keyboard(id),
                 )
         except Exception:
             logging.exception("freeze: failed to edit confirmation message")
-        await query.answer(f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{utils.get_hour_string(hours)}</b>")
+        await query.answer(f"🔐 Авто-ответы <b>выключены</b> для <b>{psevdo}</b> на <b>{utils.get_hour_string(hours)}</b>")
         return
 
     if data.startswith("unfreeze:"):
@@ -279,12 +275,12 @@ async def callback_any(query: types.CallbackQuery):
         try:
             if message:
                 await message.edit_text(
-                    f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>",
+                    f"🔑 Авто-ответы <b>включены</b> для <b>{psevdo}</b>",
                     reply_markup=_build_freeze_keyboard(id, hot=False),
                 )
         except Exception:
             logging.exception("unfreeze: failed to edit confirmation message")
-        await query.answer(f"🔑 Авто-ответы <b>включены</b> для <b>{username}</b>")
+        await query.answer(f"🔑 Авто-ответы <b>включены</b> для <b>{psevdo}</b>")
         return
 
     if data.startswith("game:"):
@@ -295,7 +291,6 @@ async def callback_any(query: types.CallbackQuery):
                     await query.answer("Игра запущена")
                 except Exception:
                     pass
-                name = utils.get_user_psevdo(getattr(query.from_user, "id", 0)) or (getattr(query.from_user, "first_name", None) or getattr(query.from_user, "username", ""))
                 conv_key = (message.chat.id, query.from_user.id)
                 rag_ctx = ""
                 id = getattr(message.from_user, "id", None)
@@ -321,7 +316,7 @@ async def callback_any(query: types.CallbackQuery):
                 tmp = await message.reply("🎲 Запускаю игру...")
                 answer = await handlers_helpers.complete_openai(
                     prompt,
-                    name,
+                    username,
                     conv_key,
                     sys_prompt,
                     rag_ctx,
@@ -358,7 +353,7 @@ async def callback_any(query: types.CallbackQuery):
         return
 
     if await is_subscribed(query.from_user.id):
-        await message.reply(f"Привет, {username}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
+        await message.reply(f"Привет, {psevdo}!\nМожешь писать мне свои вопросы\nОбращайся ко мне - бриджик")
     else:
         await message.reply("Подписка не найдена! Убедитесь, что подписаны на канал", show_alert=True)
 
@@ -395,6 +390,8 @@ async def auto_reply(message: types.Message):
     has_image_doc = bool(getattr(message, "document", None) and str(getattr(message.document, "mime_type", "")).startswith("image/"))
     has_image = has_photo or has_image_doc
     has_voice = bool(getattr(message, "voice", None)) or bool(getattr(message, "audio", None) and str(getattr(message.audio, "mime_type", "")).startswith("audio/"))
+    username = getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
+    # psevdo = utils.get_user_psevdo(getattr(message.from_user, "id", 0)) or username
 
     # Voice transcription (runs even if bot is not addressed)
     if has_voice:
@@ -461,9 +458,6 @@ async def auto_reply(message: types.Message):
         else:
             msg = await message.reply("⏳ <b>Думаю...</b>")
         # Имя для LLM контекста: псевдоним, иначе first_name/username (без @)
-        username = utils.get_user_psevdo(id) or (
-            getattr(message.from_user, "first_name", None) or getattr(message.from_user, "username", "")
-        )
         conv_key = utils.make_key(message)
 
         sys_prompt = utils.load_system_prompt_for_chat(message.chat)
