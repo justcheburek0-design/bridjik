@@ -13,6 +13,7 @@ from typing import Dict, Optional
 from aiogram import types
 from aiogram.enums import ChatType
 
+import strings
 import config
 from bot_init import *
 
@@ -176,94 +177,89 @@ def _load_chat_logs() -> None:
 
 
 def _shorten(s: str, limit: int = 700) -> str:
-    """RU: Обрезает пробелы и длинные строки, добавляя многоточие."""
     s = (s or "").strip()
     return (s[:limit] + "...") if len(s) > limit else s
 
 def make_key(msg: types.Message) -> HistoryKey:
-    """RU: Формирует ключ истории на основе chat_id и user_id."""
     return (msg.chat.id, msg.from_user.id)
 
 def remember_user(key: HistoryKey, text: str) -> None:
-    """RU: Сохраняет краткую версию последнего сообщения пользователя."""
     HISTORY[key].append(("user", _shorten(text)))
     _save_history()
 
 def remember_assistant(key: HistoryKey, text: str) -> None:
-    """RU: Сохраняет краткий ответ ассистента для контекста."""
     HISTORY[key].append(("assistant", _shorten(text)))
     _save_history()
 
+
 def build_input_with_history(key: HistoryKey, user_text: str, name: str) -> str:
-    """Собирает вход с короткой историей переписки (для лички)."""
     lines: List[str] = []
     hist = HISTORY.get(key)
     if hist:
-        lines.append(f"стория: последние (до {config.DM_MAX_MESSAGES}):")
+        lines.append(strings.text("history_header", limit=config.DM_MAX_MESSAGES))
         for role, text in hist:
-            who = "Пользователь" if role == "user" else "Ассистент"
+            who = strings.text("history_user_label") if role == "user" else strings.text("history_assistant_label")
             lines.append(f"{who}: {text}")
-        lines.append("Конец истории")
-    lines.append(f"Пользователь ({name}): {user_text}")
-    lines.append("Ответ:")
+        lines.append(strings.text("history_footer"))
+    lines.append(strings.text("history_user_line", name=name, text=user_text))
+    lines.append(strings.text("history_question_header"))
     return "\n".join(lines)
 
 def _author_from(msg: types.Message) -> str:
-    """RU: Получает отображаемое имя автора из входящего сообщения."""
     user = getattr(msg, "from_user", None)
     if not user:
-        return "неизвестно"
-    return (getattr(user, "username", None) or getattr(user, "first_name", "") or "безымянный")
+        return "???"
+    return (getattr(user, "username", None) or getattr(user, "first_name", "") or "???")
 
 def save_incoming_message(message: types.Message, text: str) -> None:
-    """RU: Записывает сообщение пользователя в буфер транскрипта чата."""
     chat_id = message.chat.id
     author = _author_from(message)
     is_bot = bool(getattr(message.from_user, "is_bot", False))
     if not text:
         if message.photo:
-            text = f"Фото: {message.photo[-1].file_id}"
+            text = strings.text("log_photo", id=message.photo[-1].file_id)
         elif message.document:
-            text = f"Документ: {message.document.file_id}"
+            text = strings.text("log_document", id=message.document.file_id)
         elif message.voice:
-            text = f"Голосовое сообщение (текст не распознан): {message.voice.file_id}"
+            text = strings.text("log_voice", id=message.voice.file_id)
         elif message.video:
-            text = f"Видео: {message.video.file_id}"
+            text = strings.text("log_video", id=message.video.file_id)
         elif message.audio:
-            text = f"Аудио: {message.audio.file_id}"
+            text = strings.text("log_audio", id=message.audio.file_id)
         elif message.sticker:
-            text = f"Стикер {message.sticker.emoji}: {message.sticker.file_id}"
+            text = strings.text("log_sticker", emoji=(message.sticker.emoji or ""), id=message.sticker.file_id)
         else:
             return
     CHAT_LOGS[chat_id].append((author, is_bot, _shorten(text)))
     _save_chat_logs()
-
-def save_outgoing_message(chat_id: int, text: str, bot_display_name: str = "Ассистент") -> None:
+def save_outgoing_message(chat_id: int, text: str, bot_display_name: str = strings.text("assistant_display_name")) -> None:
     """Track what the bot answered so the transcript stays balanced."""
     if not text:
         return
     CHAT_LOGS[chat_id].append((bot_display_name, True, _shorten(text)))
     _save_chat_logs()
 
+
 async def build_input_from_chat_thread(
     message: types.Message,
     user_text: str,
     name: str
 ) -> str:
-    """Собирает вход из нитки чата (группы) с недавними репликами."""
+    """Builds a short group-thread transcript for LLM context."""
+    import strings as _strings
     lines: List[str] = []
     chat_id = message.chat.id
     thread: List[ChatLine] = list(CHAT_LOGS.get(chat_id, deque()))[-config.GROUP_MAX_MESSAGES:]
     if thread:
-        lines.append("Контекст чата: последние сообщения:")
+        lines.append(_strings.text("thread_header"))
         for author, is_bot, text in thread:
             if not text:
                 continue
-            role = "Ассистент" if is_bot else author
+            role = _strings.text("assistant_display_name") if is_bot else author
             lines.append(f"{role}: {text}")
-        lines.append("Конец контекста")
-    lines.append(f"Пользователь ({name}): {user_text}")
-    lines.append("Ответ:")
+        lines.append(_strings.text("thread_footer"))
+    lines.append(_strings.text("history_user_line", name=name, text=user_text))
+    lines.append(_strings.text("history_question_header"))
     return "\n".join(lines)
 def hash(s: str) -> str:
     """Helper that keeps short, deterministic hashes for filenames and IDs."""
@@ -303,9 +299,8 @@ def load_system_prompt_for_chat(chat: types.Chat) -> str:
     return "Пиши что я сегодня не смогу помочь, мой системный промт сломался."
 
 def should_answer(message: types.Message) -> bool:
-    """RU: Эвристически решает, нужно ли боту отвечать автоматически."""
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
-    # RU: Если это reply — реагируем только если ответ адресован нашему боту
+
     if message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.is_bot:
         replied_username = getattr(message.reply_to_message.from_user, "username", "") or ""
         if bot_username and replied_username == (bot_username or ""):
@@ -377,7 +372,6 @@ def _load_freezes() -> None:
         logging.exception("Failed to load FREEZES from JSON")
 
 def _cleanup_freezes(now: Optional[float] = None) -> None:
-    """RU: Удаляет истёкшие записи заморозки, поддерживая кэш в актуальном состоянии."""
     if now is None:
         now = time.time()
     expired = [uid for uid, ts in _USER_FREEZES.items() if ts <= now]
@@ -389,21 +383,18 @@ def _cleanup_freezes(now: Optional[float] = None) -> None:
         _save_freezes()
 
 def set_user_freeze(user_id: int, hours: int) -> float:
-    """RU: Включает заморозку автоответов для пользователя на указанное число часов."""
     expires_at = time.time() + hours * 3600
     _USER_FREEZES[user_id] = expires_at
     _save_freezes()
     return expires_at
 
 def clear_user_freeze(user_id: int) -> bool:
-    """RU: Снимает заморозку, если она была; возвращает факт изменения."""
     removed = _USER_FREEZES.pop(user_id, None) is not None
     if removed:
         _save_freezes()
     return removed
 
 def get_user_freeze(user_id: int) -> Optional[float]:
-    """RU: Возвращает UNIX-время окончания заморозки (или None)."""
     _cleanup_freezes()
     expires_at = _USER_FREEZES.get(user_id)
     if expires_at is None:
@@ -414,17 +405,14 @@ def get_user_freeze(user_id: int) -> Optional[float]:
     return expires_at
 
 def is_user_frozen(user_id: int) -> bool:
-    """RU: Проверяет, есть ли у пользователя активная заморозка."""
     return get_user_freeze(user_id) is not None
 
 
 def get_hour_string(hours: int) -> str:
-    """RU: Форматирует количество часов человекочитаемой строкой."""
     return f"{hours} час" if hours == 1 else f"{hours} часа"
 
 
 def format_player_info(info: dict) -> str:
-    """RU: Форматирует профиль MineBridge в безопасный для Telegram HTML."""
     # Порядок полей
     lines = []
     
@@ -520,6 +508,9 @@ def display_name(user: types.User, prefer_username: bool = False) -> str:
     except Exception:
         pass
     return "Пользователь"
+
+
+
 
 
 

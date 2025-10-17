@@ -1,5 +1,4 @@
-# main.py
-# RU: Точка входа: инициализация бота, прогрев RAG и запуск поллинга.
+﻿# main.py
 import asyncio
 import logging
 import traceback
@@ -46,8 +45,6 @@ async def shutdown():
 async def main():
     await on_startup()
 
-    # отладочное логирование: покажем, что модуль handlers импортирован
-    # RU: Хендлеры импортированы; стартуем поллинг
     logging.info("Handlers imported; starting polling")
 
     try:
@@ -60,3 +57,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

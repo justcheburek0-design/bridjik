@@ -1,4 +1,4 @@
-from aiogram import types
+﻿from aiogram import types
 from aiogram.types import FSInputFile, BufferedInputFile
 from pathlib import Path
 import asyncio
@@ -19,7 +19,6 @@ import utils
 
 PHOTO_TAG_RE = re.compile(r"\[\[photo:([^\]]+)\]\]", re.IGNORECASE)
 STICKER_TAG_RE = re.compile(r"\[\[sticker:([^\]]+)\]\]", re.IGNORECASE)
-# RU: Универсальный парсер медиа-тегов, чтобы сохранять порядок в тексте
 MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb|guess):([^\]]+)\]\]", re.IGNORECASE)
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
 _IMAGE_HEADERS = {
@@ -35,7 +34,6 @@ _PIXABAY_LANG = "ru"
 
 
 def _find_photo_file(name: str) -> Path | None:
-    """RU: Ищет локальный файл в каталоге photos по базовому имени."""
     base = (name or "").strip()
     base = re.sub(r"[\\/]+", "", base)
     photos_dir = Path("photos")
@@ -55,7 +53,6 @@ def _find_photo_file(name: str) -> Path | None:
     return None
 
 def _normalise_ext(ext: str | None) -> str:
-    """RU: Нормализует расширение изображения к поддерживаемому виду."""
     if not ext:
         return ""
     ext = ext.lower()
@@ -68,7 +65,6 @@ def _normalise_ext(ext: str | None) -> str:
     return ext
 
 def _guess_image_extension(url: str, content_type: str | None) -> str:
-    """RU: Пытается определить корректное расширение изображения по MIME и URL."""
     primary = (content_type or "").split(";")[0].strip().lower()
     ext = ""
     if primary:
@@ -83,7 +79,6 @@ def _guess_image_extension(url: str, content_type: str | None) -> str:
 
 
 def _build_image_filename(query: str, url: str, content_type: str | None) -> str:
-    """RU: Строит безопасное имя файла для сохранения изображения."""
     ext = _guess_image_extension(url, content_type)
     base = re.sub(r"[^a-z0-9_-]+", "_", (query or "image").strip().lower())
     base = base.strip("_") or "image"
@@ -91,7 +86,6 @@ def _build_image_filename(query: str, url: str, content_type: str | None) -> str
 
 
 async def _fetch_pixabay_hits(client: httpx.AsyncClient, query: str) -> list[dict]:
-    """RU: Запрашивает список результатов с Pixabay по текстовому запросу."""
     api_key = (PIXABAY_API_KEY or "").strip()
     if not api_key:
         logging.warning("image search skipped for %s: missing PIXABAY_API_KEY", query)
@@ -125,13 +119,11 @@ async def _fetch_pixabay_hits(client: httpx.AsyncClient, query: str) -> list[dic
 
 
 def _is_url(s: str) -> bool:
-    """RU: Проверяет, похожа ли строка на URL (http/https)."""
     s = (s or "").strip().lower()
     return s.startswith("http://") or s.startswith("https://")
 
 
 async def _search_image_online(query: str) -> BufferedInputFile | None:
-    """RU: Ищет подходящее изображение онлайн (Pixabay) и скачивает его."""
     q = (query or "").strip()
     if not q:
         return None
@@ -189,7 +181,6 @@ async def _search_image_online(query: str) -> BufferedInputFile | None:
     return None
 
 async def _resolve_photo_payload(payload: str) -> str | FSInputFile | BufferedInputFile | None:
-    """RU: Преобразует плейсхолдер [[photo:...]] в URL или файл для отправки."""
     target = (payload or "").strip()
     if not target:
         return None
@@ -201,7 +192,6 @@ async def _resolve_photo_payload(payload: str) -> str | FSInputFile | BufferedIn
     return await _search_image_online(target)
 
 async def _resolve_sticker_payload(payload: str, chat_id: int) -> str | None:
-    """RU: Разрешает sticker-полезную нагрузку: last/alias/file_id -> file_id."""
     p = (payload or "").strip()
     if not p:
         return None
@@ -246,7 +236,6 @@ def _parse_keyboard_payload(payload: str) -> types.InlineKeyboardMarkup | None:
 
 
 async def long_text(msg: types.Message, user_msg: types.Message, text: str):
-    """RU: Отправляет длинный текст частями и встраивает фото по тегам [[photo:...]]."""
     CHUNK = 4000
     if text is None:
         text = ""
@@ -360,3 +349,4 @@ async def long_text(msg: types.Message, user_msg: types.Message, text: str):
             await msg.delete()
         except Exception:
             pass
+

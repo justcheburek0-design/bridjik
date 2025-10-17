@@ -1,4 +1,4 @@
-# mb_api.py
+﻿# mb_api.py
 import asyncio
 import logging
 import httpx
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def _make_punycode_host(host: str) -> str:
-    """RU: Преобразует домен с не-ASCII в punycode для HTTP-запросов."""
     try:
         return host.encode("idna").decode("ascii")
     except Exception:
@@ -27,13 +26,12 @@ def _make_punycode_host(host: str) -> str:
 
 
 async def _fetch_json_from_api(id: str | None) -> Optional[Dict[str, Any]]:
-    """RU: Запрашивает у MineBridge API данные по нику и возвращает JSON."""
     if not id:
         return None
     
     host = _make_punycode_host(config.MB_HOST)
     
-    id_esc = quote_plus(id, safe="")  # RU: гарантируем URL-безопасность id
+    id_esc = quote_plus(id, safe="")  
     url = f"https://{host}/api/tg/{id_esc}"
 
     try:
@@ -43,7 +41,6 @@ async def _fetch_json_from_api(id: str | None) -> Optional[Dict[str, Any]]:
             try:
                 return r.json()
             except Exception:
-                # RU: JSON может быть некорректным — логируем и возвращаем None
                 logger.exception("mb_api: failed to parse JSON for nick %s", id)
                 return None
     except httpx.HTTPStatusError as e:
@@ -56,7 +53,6 @@ async def _fetch_json_from_api(id: str | None) -> Optional[Dict[str, Any]]:
         return None
 
 def _get_cache(key: str) -> Optional[Dict[str, Any]]:
-    """RU: Возвращает значение из кэша, если оно ещё не истекло."""
     row = _MB_CACHE.get(key)
     if not row:
         return None
@@ -71,7 +67,6 @@ def _get_cache(key: str) -> Optional[Dict[str, Any]]:
 
 
 def _set_cache(key: str, val: Optional[Dict[str, Any]]) -> None:
-    """RU: Кладёт снимок ответа API в кэш с текущим временем."""
     _MB_CACHE[key] = (time.time(), val)
 
 

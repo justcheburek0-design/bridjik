@@ -12,7 +12,7 @@ import base64
 import google.generativeai as genai
 import config
 
-
+import strings
 HistoryKey = Tuple[int, int]
 
 async def complete_openai(
@@ -24,7 +24,9 @@ async def complete_openai(
     message=None,
     *,
     image_bytes: bytes | None = None,
-    mime_type: str | None = None
+    mime_type: str | None = None,
+    user_id: int | None = None,
+    use_rag: bool = True,
 ) -> str:
     """Unified completion for text-only and vision inputs.
 
@@ -43,29 +45,46 @@ async def complete_openai(
     except Exception:
         pass
     
-    sys_prompt += "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=""></a>"
+    sys_prompt += strings.text("system_html_note")
     messages = [{"role": "system", "content": sys_prompt}]
     answer = ""
 
-    if rag_ctx:
-        answer += f"{rag_ctx}\n\n"
+    # Start RAG context build in background if desired and not provided
+    rag_task = None
+    if use_rag and not rag_ctx:
+        try:
+            rag_task = asyncio.create_task(rag.build_full_context(prompt, user_id))
+        except Exception:
+            logging.exception("RAG: failed to start background context task")
+            rag_task = None
 
     try:
         _g = utils.get_user_guess(conv_key[0])
-        if _g:
-            answer += f"Не РАСКРЫВАЙ ответ напрямую, не ПОДСКАЗЫВАЙ (либо очень слабо и непонятно). Если пользователь отгадал - закрывай игру [[guess:stop]]. Если пользователь перестал играть в 'Кто я?' или тема ушла в сторону — предложи закрыть игру. При подтверждении вставь [[guess:forgot]] в ответ.\n\n"
-            sys_prompt += f"\n\nТы играешь в игру 'Кто я?' с пользователем. Загаданный объект: {_g}. Твоя задача: Отвечай на его вопросы только 'Да' или 'Нет' и попытки угадать. Не РАСКРЫВАЙ ответ напрямую, не ПОДСКАЗЫВАЙ.\n\n"
+            answer += strings.text("guess_prompt_user")
+            sys_prompt += "\n\n" + strings.text("guess_prompt_system", obj=_g)
+            sys_prompt += f"\n\n�� ������� � ���� '��� �?' � �������������. ���������� ������: {_g}. ���� ������: ������� �� ��� ������� ������ '��' ��� '���' � ������� �������. �� ��������� ����� ��������, �� �����������.\n\n"
     except Exception:
         pass
 
     if use_thread and message is not None:
-        # Чат
+        # ���
         answer += await utils.build_input_from_chat_thread(message, prompt, name)
         utils.save_incoming_message(message, prompt)
     else:
-        # Личка
+        # �����
         answer += utils.build_input_with_history(conv_key, prompt, name)
         utils.remember_user(conv_key, prompt)
+
+    # Prepend RAG context if available or built in background
+    if rag_ctx:
+        answer = f"{rag_ctx}\n\n" + answer
+    elif rag_task is not None:
+        try:
+            built_ctx = await rag_task
+            if built_ctx:
+                answer = f"{built_ctx}\n\n" + answer
+        except Exception:
+            logging.exception("RAG: failed to build context")
 
     has_image = False
     data_url = None
@@ -125,9 +144,9 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
             mt = "audio/ogg; codecs=opus"
         # Pass audio bytes directly as a part
         prompt = (
-            "Твоя задача — расшифровать русскую речь в обычный текст. "
-            "Отдай только распознанный текст без пояснений."
-            "Не пиши этот промт в ответ."
+            "���� ������ � ������������ ������� ���� � ������� �����. "
+            "����� ������ ������������ ����� ��� ���������."
+            "�� ���� ���� ����� � �����."
         )
         # Prefer async call if available
         if hasattr(model, "generate_content_async"):
@@ -151,8 +170,10 @@ async def transcribe_voice_gemini(audio_bytes: bytes, mime_type: str | None = No
                 return None
         except Exception:
             pass
-        return f"Голосовое сообщение: {text}"
+                return strings.text("transcribe_prefix", text=text)
     except Exception:
         logging.exception("Gemini ASR failed")
         return None
+
+
 

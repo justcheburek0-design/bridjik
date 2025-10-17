@@ -1,5 +1,5 @@
-import os
-# RU: Простой ручной тест вызова OpenAI через OpenRouter
+﻿import os
+
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -20,3 +20,4 @@ completion = client.chat.completions.create(
 )
 
 print(completion)
+

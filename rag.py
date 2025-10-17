@@ -1,4 +1,4 @@
-# rag.py
+﻿# rag.py
 import json
 import asyncio
 from pathlib import Path
@@ -11,6 +11,7 @@ import config
 import utils
 import mc
 import mb_api
+import strings
 
 RAG_CHUNKS = []   # [{id, file, text, mtime}]
 RAG_VECS = None
@@ -18,7 +19,6 @@ RAG_LOADED = False
 RAG_LOCK = asyncio.Lock()
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """RU: Запрашивает эмбеддинги для пакета строк через Jina API."""
     while True:
         try:
             async with httpx.AsyncClient(timeout=60) as s:
@@ -42,7 +42,6 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
             return []
 
 def read_text_file(p: Path) -> str:
-    """RU: Читает файл базы знаний и нормализует текст в UTF-8 с LF."""
     try:
         raw = p.read_text(encoding="utf-8", errors="ignore")
         if raw.startswith("\ufeff"):
@@ -65,10 +64,6 @@ def _clamp_priority(val: int | None) -> int:
     return v
 
 def _extract_priority_and_strip(text: str) -> tuple[int, str]:
-    """
-    Extracts RAG priority from top-of-file metadata and strips it from content.
-    Returns (priority, content_without_meta). Default priority is 5.
-    """
     if not text:
         return 5, ""
 
@@ -89,7 +84,6 @@ def _extract_priority_and_strip(text: str) -> tuple[int, str]:
     return 5, s
 
 def split_chunks(text: str, size: int, ov: int) -> list[str]:
-    """RU: Делит исходный текст на перекрывающиеся фрагменты для векторного индекса."""
     text = text.strip()
     if not text:
         return []
@@ -100,7 +94,6 @@ def split_chunks(text: str, size: int, ov: int) -> list[str]:
     return [c for c in out if c.strip()]
 
 async def _ensure_rag_index():
-    """RU: Загружает кэш индекса или пересобирает его при изменении данных."""
     global RAG_CHUNKS, RAG_VECS, RAG_LOADED
     async with RAG_LOCK:
         config.RAG_INDEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -128,7 +121,6 @@ async def _ensure_rag_index():
         need_rebuild = (not RAG_LOADED) or (known_paths != kb_paths)
 
         if not need_rebuild:
-            # RU: Проверяем время модификации файлов
             for p in kb_files:
                 m = p.stat().st_mtime
                 if not any(c["file"] == str(p) and abs(c.get("mtime", 0.0) - m) < 1e-6 for c in RAG_CHUNKS):
@@ -138,7 +130,7 @@ async def _ensure_rag_index():
         if not need_rebuild:
             return
 
-        logging.info("RAG: (re)building index...")  # RU: Пересборка индекса
+        logging.info("RAG: (re)building index...")  
         all_chunks = []
         all_texts = []
         for p in kb_files:
@@ -172,7 +164,6 @@ async def _ensure_rag_index():
             logging.warning("RAG: no chunks produced (empty kb?)")
 
 async def search(query: str):
-    """RU: Возвращает top-k наиболее релевантных фрагментов из базы знаний."""
     await _ensure_rag_index()
     global RAG_VECS, RAG_CHUNKS
     if RAG_VECS is None or len(RAG_CHUNKS) == 0:
@@ -192,41 +183,37 @@ async def search(query: str):
 
 async def build_full_context(
     prompt: str,
-    id: str | None = None
+    user_id: int | None = None,
 ) -> str:
-    """RU: Собирает динамический контекст сервера, данные игрока и фрагменты RAG."""
     sections: list[str] = []
 
     # Start independent requests in parallel
     status_task = asyncio.create_task(mc.fetch_status())
     search_task = asyncio.create_task(search(prompt))
-    player_task = asyncio.create_task(mb_api.fetch_player_by_id(str(id))) if id else None
+    player_task = asyncio.create_task(mb_api.fetch_player_by_id(str(user_id))) if user_id else None
     
-    psevdo = utils.get_user_psevdo(id)
+    psevdo = utils.get_user_psevdo(user_id) if user_id is not None else None
     if psevdo:
-        sections.append(f"Обращайся к игроку: '<b>{psevdo}</b>'\n")
-
-    # RU: Динамический контекст сервера
+        sections.append(strings.text("rag_user_pseudo_line", name=psevdo) + "\n")
+    
     try:
         payload = await status_task
         server_ctx = mc.format_status_text(payload)
         if server_ctx:
             sections.append(f"Пиши про статус, только когда просят\n{server_ctx}\n")
+            sections.append(strings.text("rag_server_context_header", server=server_ctx) + "\n")
     except Exception:
         logging.exception("RAG: failed to fetch server status")
-
-    # RU: Динамический контекст игрока
-    if id:
+    
+    if user_id:
         try:
             player_info = await player_task
             if player_info:
-                sections.append(f"Игрок (из MineBridge API):\nИспользуй данные аккаунта, только когда просят\n{json.dumps(player_info, ensure_ascii=False)}\n")
+                sections.append(strings.text("rag_player_info_header", json=json.dumps(player_info, ensure_ascii=False)) + "\n")
         except Exception:
             logging.exception("RAG: failed to fetch player info")
-            
-    sections.append(f"Текущая дата: {datetime.now()}")
-
-    # RU: База знаний через семантический поиск
+             
+    sections.append(strings.text("rag_generated_at", timestamp=datetime.now()))
     results = await search_task
     if results:
         total = 0
@@ -242,3 +229,4 @@ async def build_full_context(
             sections.append("\n".join(kb_parts))
 
     return "\n\n".join([s for s in sections if s])
+

@@ -1,4 +1,4 @@
-# mc.py
+﻿# mc.py
 import asyncio
 import logging
 import httpx
@@ -10,7 +10,6 @@ import utils
 _MC_STATUS_CACHE = {}
 
 async def fetch_status() -> dict:
-    """RU: Загружает статус Minecraft-сервера, используя краткоживущий кэш."""
     now = asyncio.get_event_loop().time()
     cached = _MC_STATUS_CACHE.get(config.MC_SERVER_HOST)
     if cached and (now - cached[0] < config.MC_CACHE_TTL):
@@ -37,7 +36,6 @@ async def fetch_status() -> dict:
             return {}
 
 def format_status_text(payload: dict) -> str:
-    """RU: Формирует человекочитаемое описание статуса Minecraft-сервера."""
     online = bool(payload.get("online"))
     version = payload.get("version") or ""
     players_online = players_max = None
@@ -67,3 +65,4 @@ def format_status_text(payload: dict) -> str:
         safe_motd = re.sub(r'([_*`])', r'\\\1', motd)
         lines.append(f"<code>{safe_motd}</code>")
     return "\n".join(lines)
+

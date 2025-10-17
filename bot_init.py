@@ -1,5 +1,5 @@
-# bot_init.py
-# RU: Инициализация объектов бота: Bot, Dispatcher и клиент OpenAI.
+﻿# bot_init.py
+
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -17,3 +17,4 @@ openai_client = AsyncOpenAI(api_key=config.OPENAI_API_KEY, base_url="https://ope
 bot_username: str = "minebridge52bot"
 last_update = datetime.now()
 version = "16.10a"
+
