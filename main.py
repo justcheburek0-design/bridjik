@@ -19,6 +19,17 @@ async def on_startup(container: Container):
     try:
         me = await container.bot.get_me()
         logger.info(f"Bot started: @{me.username or 'unknown'}")
+        
+        # Log bot restart to chat logs for all known chats
+        restart_message = f"🔄 Бот перезагружен (версия {container.config.VERSION})"
+        for chat_id in container.chat_logs_repo._logs.keys():
+            container.chat_logs_repo.add_message(
+                chat_id=chat_id,
+                author="System",
+                is_bot=True,
+                text=restart_message
+            )
+        logger.info(f"Logged restart notification to {len(container.chat_logs_repo._logs)} chats")
     except Exception:
         logger.exception("Failed to get bot info on startup")
     

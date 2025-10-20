@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Dict
 from dotenv import load_dotenv
 
+from __init__ import __version__
+
 load_dotenv()
 
 
@@ -15,7 +17,7 @@ class Config:
     # Telegram bot
     BOT_TOKEN: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", ""))
     BOT_USERNAME: str = "minebridge52bot"
-    VERSION: str = "16.10a"
+    VERSION: str = __version__
     
     # Channels and URLs
     CHANNEL: str = field(default_factory=lambda: os.getenv("CHANNEL", "@MineBridgeOfficial"))

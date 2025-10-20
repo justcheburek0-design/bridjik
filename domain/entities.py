@@ -2,7 +2,6 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
-from datetime import datetime
 
 if TYPE_CHECKING:
     from application.services.rag import RAGService
