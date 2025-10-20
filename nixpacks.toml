@@ -1,0 +1,5 @@
+[build]
+providers = ["python"]
+
+[build.nix-pkgs]
+pkgs = ["ffmpeg", "python311", "libsodium"]
