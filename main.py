@@ -1,6 +1,8 @@
 """Main entry point for the bot."""
 import asyncio
 import logging
+import signal
+import sys
 
 from core.dependencies import Container
 from presentation.handlers.commands import start, user, info, server, game, admin
@@ -12,6 +14,22 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Global flag for graceful shutdown
+_shutdown_event = None
+
+
+def _handle_signal(signum, frame):
+    """Handle SIGTERM and SIGINT signals for immediate shutdown."""
+    sig_name = signal.Signals(signum).name
+    logger.warning(f"Received {sig_name} signal, initiating immediate shutdown...")
+    
+    # Set the shutdown event if it exists
+    if _shutdown_event:
+        _shutdown_event.set()
+    
+    # Exit immediately
+    sys.exit(0)
 
 
 async def on_startup(container: Container):
@@ -45,21 +63,33 @@ async def on_startup(container: Container):
 
 async def on_shutdown(container: Container):
     """Execute on bot shutdown."""
+    logger.info("Shutting down bot...")
+    
     try:
-        # Close OpenAI client
+        # Close OpenAI client with timeout
         aclose = getattr(container.openai_client, "aclose", None)
         if callable(aclose):
-            if asyncio.iscoroutinefunction(aclose):
-                await aclose()
-            else:
-                aclose()
+            try:
+                if asyncio.iscoroutinefunction(aclose):
+                    await asyncio.wait_for(aclose(), timeout=2.0)
+                else:
+                    aclose()
+                logger.debug("OpenAI client closed")
+            except asyncio.TimeoutError:
+                logger.warning("OpenAI client close timeout")
     except Exception:
         logger.exception("Error closing openai client")
     
     try:
-        await container.bot.session.close()
+        # Close bot session with timeout
+        await asyncio.wait_for(container.bot.session.close(), timeout=2.0)
+        logger.debug("Bot session closed")
+    except asyncio.TimeoutError:
+        logger.warning("Bot session close timeout")
     except Exception:
         logger.exception("Error closing bot session")
+    
+    logger.info("Bot shutdown complete")
 
 
 def register_handlers(container: Container):
@@ -113,6 +143,13 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        # Set signal handlers
+        signal.signal(signal.SIGTERM, _handle_signal)
+        signal.signal(signal.SIGINT, _handle_signal)
+        
+        # Set the global shutdown event
+        _shutdown_event = asyncio.Event()
+        
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Shutdown complete")
