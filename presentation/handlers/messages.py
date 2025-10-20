@@ -1,4 +1,4 @@
-"""Message handlers."""
+﻿"""Message handlers."""
 import logging
 import re
 from aiogram import types, Router
@@ -11,7 +11,7 @@ from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
 from domain.entities import User, Chat, MessageContext
-from domain.interfaces import IFreezesRepository, IChatLogsRepository
+from domain.interfaces import IFreezesRepository, IChatLogsRepository, IHistoryRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
 
@@ -19,6 +19,62 @@ from presentation.decorators import handle_errors
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+def _get_media_description(message: types.Message) -> str:
+    """Generate media description from message.
+    
+    Returns empty string if no media found.
+    """
+    if message.photo:
+        caption = getattr(message, "caption", None) or ""
+        return f"🖼️ Фото{f': {caption}' if caption else ''}"
+    elif message.document:
+        doc = message.document
+        filename = getattr(doc, "file_name", "документ")
+        mime = getattr(doc, "mime_type", "unknown")
+        return f"📎 Документ: {filename} ({mime})"
+    elif message.voice:
+        voice = message.voice
+        duration = getattr(voice, "duration", 0)
+        return f"🎤 Голосовое сообщение ({duration}с)"
+    elif message.sticker:
+        sticker = message.sticker
+        emoji = getattr(sticker, "emoji", "")
+        is_animated = getattr(sticker, "is_animated", False)
+        is_video = getattr(sticker, "is_video", False)
+        sticker_set = getattr(sticker, "set_name", "неизвестный набор")
+        
+        sticker_type = "стикер"
+        if is_video:
+            sticker_type = "видео-стикер"
+        elif is_animated:
+            sticker_type = "анимированный стикер"
+        
+        return f"🎨 {sticker_type} {emoji} из '{sticker_set}'"
+    elif message.animation:
+        animation = message.animation
+        duration = getattr(animation, "duration", 0)
+        filename = getattr(animation, "file_name", "гифка")
+        return f"🎬 Гифка '{filename}' ({duration}с)"
+    elif message.video:
+        video = message.video
+        duration = getattr(video, "duration", 0)
+        return f"📹 Видео ({duration}с)"
+    elif message.audio:
+        audio = message.audio
+        duration = getattr(audio, "duration", 0)
+        performer = getattr(audio, "performer", None)
+        title = getattr(audio, "title", None)
+        desc = f"🎵 Аудио"
+        if performer:
+            desc += f" - {performer}"
+        if title:
+            desc += f": {title}"
+        desc += f" ({duration}с)"
+        return desc
+    
+    return ""
 
 
 def _should_answer(message: types.Message, bot_username: str) -> bool:
@@ -81,19 +137,24 @@ def _save_incoming_message(chat_logs_repo: IChatLogsRepository, message: types.M
     author = message.from_user.username or message.from_user.first_name or "unknown" if message.from_user else "unknown"
     is_bot = bool(getattr(message.from_user, "is_bot", False))
     
-    if not text:
-        if message.photo:
-            text = f"Фото: {message.photo[-1].file_id}"
-        elif message.document:
-            text = f"Документ: {message.document.file_id}"
-        elif message.voice:
-            text = f"Голосовое сообщение: {message.voice.file_id}"
-        elif message.sticker:
-            text = f"Стикер {message.sticker.emoji}: {message.sticker.file_id}"
-        else:
-            return
+    # Get media description
+    media_desc = _get_media_description(message)
     
-    chat_logs_repo.add_message(chat_id, author, is_bot, text)
+    # Build final message
+    if text and media_desc:
+        # If both text and media, combine them
+        final_text = f"{media_desc}\n\n{text}"
+    elif media_desc:
+        # Only media
+        final_text = media_desc
+    elif text:
+        # Only text
+        final_text = text
+    else:
+        # Nothing to save
+        return
+    
+    chat_logs_repo.add_message(chat_id, author, is_bot, final_text)
 
 
 @router.message()
@@ -109,15 +170,17 @@ async def auto_reply(
     gemini_api: GeminiAPI,
     freezes_repo: IFreezesRepository,
     chat_logs_repo: IChatLogsRepository,
+    history_repo: IHistoryRepository,
     config
 ):
     """Auto-reply with AI."""
     prompt = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     has_photo = bool(getattr(message, "photo", None))
     has_image_doc = bool(getattr(message, "document", None) and str(getattr(message.document, "mime_type", "")).startswith("image/"))
-    has_image = has_photo or has_image_doc
+    has_sticker = bool(getattr(message, "sticker", None))
+    has_animation = bool(getattr(message, "animation", None))
+    has_image = has_photo or has_image_doc or has_sticker or has_animation
     has_voice = bool(getattr(message, "voice", None))
-    
     user_id = getattr(message.from_user, "id", None)
     
     # Voice transcription
@@ -173,18 +236,32 @@ async def auto_reply(
             title=getattr(message.chat, "title", None)
         )
         
-        # Download image if present
+        # Download image/sticker/animation if present
         image_bytes = None
         mime_type = None
+        msg = None
         if has_image:
-            msg = await message.reply("🖼️ <b>Распознаю изображение...</b>")
-            image_data = await media_service.download_image(message)
+            if has_sticker:
+                msg = await message.reply("🎨 <b>Распознаю стикер...</b>")
+                image_data = await media_service.download_sticker(message)
+            elif has_animation:
+                msg = await message.reply("🎬 <b>Распознаю гифку...</b>")
+                image_data = await media_service.download_animation(message)
+            else:
+                msg = await message.reply("🖼️ <b>Распознаю изображение...</b>")
+                image_data = await media_service.download_image(message)
+            
             if image_data:
                 image_bytes, mime_type = image_data
-        elif has_voice:
-            msg = await message.reply("🎙️ <b>Распознаю голосовое...</b>")
-        else:
-            msg = await message.reply("⏳ <b>Думаю...</b>")
+            elif msg and has_image:
+                # If image download failed, note it but continue
+                logger.warning("Failed to download image, continuing with text only")
+        
+        if not msg:
+            if has_voice:
+                msg = await message.reply("🎙️ <b>Распознаю голосовое...</b>")
+            else:
+                msg = await message.reply("⏳ <b>Думаю...</b>")
         
         # Load system prompt
         system_prompt = strings_service.load_system_prompt_for_chat(message.chat)
@@ -213,10 +290,39 @@ async def auto_reply(
         # Send response with media tag support
         await media_service.long_text(msg, message, answer)
         
+        # Save incoming message and outgoing response to logs
+        _save_incoming_message(chat_logs_repo, message, prompt)
+        
+        # Save the bot's answer to logs
+        chat_id = message.chat.id
+        chat_logs_repo.add_message(chat_id, "Ассистент", True, answer)
+        
+        # Also save to history for private chats
+        user_id = getattr(message.from_user, "id", None)
+        if user_id and chat_type == ChatType.PRIVATE:
+            # Get media description
+            media_desc = _get_media_description(message)
+            
+            # Build message to save
+            if prompt and media_desc:
+                msg_to_save = f"{media_desc}\n{prompt}"
+            elif media_desc:
+                msg_to_save = media_desc
+            elif prompt:
+                msg_to_save = prompt
+            else:
+                msg_to_save = "(пусто)"
+            
+            history_repo.add_user_message(chat_id, user_id, msg_to_save)
+            
+            # Save assistant message
+            history_repo.add_assistant_message(chat_id, user_id, answer)
+
     except Exception as e:
         logger.exception("Error in auto_reply")
         try:
-            await msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
+            if msg:
+                await msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
         except Exception:
             pass
 

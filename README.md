@@ -1,4 +1,4 @@
-# MineBridge Bot - Refactored Version
+# MineBridge Bot
 
 Это отрефакторенная версия MineBridge Telegram бота с чистой архитектурой и модульной структурой.
 
@@ -49,7 +49,50 @@ container = Container()
 - `data/guesses.json`
 - `data/chat_logs.json`
 
+### 5. Обработка медиа-файлов (WebP стикеры и GIF анимации)
+
+Добавлена автоматическая конвертация несовместимых форматов:
+- ✅ **WebP стикеры** → PNG для совместимости с AI APIs (OpenAI, xAI)
+- ✅ **Видео-стикеры** → первый кадр в PNG (требует ffmpeg)
+- ✅ **TGS анимированные стикеры** → PNG первый кадр (требует rlottie)
+- ✅ **GIF анимации** → первый кадр в PNG для анализа (требует ffmpeg для видеофайлов)
+- ✅ **Улучшена обработка ошибок** - система продолжает работать даже при ошибке скачивания медиа
+
 ## Запуск
+
+### Предварительные требования
+
+#### 1. Установка Python пакетов
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 2. Установка ffmpeg (для поддержки видео-стикеров и гифок)
+
+**Windows:**
+```bash
+# Через chocolatey (если установлен)
+choco install ffmpeg
+
+# Или скачайте вручную с https://ffmpeg.org/download.html
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install ffmpeg
+```
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+#### 3. Опционально: Установка rlottie (для поддержки TGS анимированных стикеров)
+
+```bash
+pip install rlottie-python
+```
 
 ### Из папки newbot:
 

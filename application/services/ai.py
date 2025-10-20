@@ -82,8 +82,8 @@ class AIService:
                     self.chat_logs_repo.add_message(context.chat.id, "Ассистент", True, text)
             
             return text
-        except (RateLimitError, APIError):
-            logging.exception("OpenAI completion rate limit/API error")
+        except (RateLimitError, APIError) as e:
+            logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
             return "Произошла ошибка при обращении к AI. Попробуйте позже."
     
     async def _build_user_input(

@@ -11,6 +11,8 @@ from urllib.parse import urlparse, unquote
 from aiogram import types, Bot
 from aiogram.types import FSInputFile, BufferedInputFile
 import httpx
+from PIL import Image
+from io import BytesIO
 
 from core.config import Config
 from domain.interfaces import IGuessesRepository
@@ -94,6 +96,121 @@ class MediaService:
             logger.exception("Failed to download voice")
             return None
     
+    async def download_sticker(self, message: types.Message) -> Optional[tuple[bytes, str]]:
+        """Download sticker from message. Returns (bytes, mime_type) or None."""
+        try:
+            if not message.sticker:
+                return None
+            
+            file_id = message.sticker.file_id
+            mime = getattr(message.sticker, "mime_type", None) or "image/webp"
+            
+            # Check if sticker is animated (TGS format - JSON-based animation)
+            is_animated = getattr(message.sticker, "is_animated", False)
+            is_video = getattr(message.sticker, "is_video", False)
+            
+            fobj = await self.bot.get_file(file_id)
+            file_path = getattr(fobj, "file_path", None)
+            if not file_path:
+                raise RuntimeError("missing sticker file_path")
+            
+            url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+            timeout = httpx.Timeout(20.0, connect=10.0, read=20.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                
+                content = resp.content
+                
+                # Handle video stickers by extracting first frame
+                if is_video:
+                    logger.info("Converting video sticker to image (extracting first frame)")
+                    extracted = await self._extract_video_sticker_frame(content)
+                    if extracted:
+                        return (extracted, "image/png")
+                    logger.warning("Failed to extract video sticker frame")
+                    return None
+                
+                # Handle animated TGS stickers - they are JSON-based, try to convert
+                if is_animated and mime == "application/gzip":
+                    logger.info("Processing animated TGS sticker")
+                    converted = await self._convert_tgs_to_image(content)
+                    if converted:
+                        return (converted, "image/png")
+                    logger.warning("Failed to convert TGS sticker")
+                    return None
+                
+                # Handle regular WebP stickers
+                if mime == "image/webp":
+                    converted = self._convert_webp_to_png(content)
+                    if converted:
+                        return (converted, "image/png")
+                    logger.warning("Failed to convert WebP sticker to PNG")
+                    return None
+                
+                # For other MIME types, try general image extraction
+                logger.debug("Sticker has MIME type: %s, attempting extraction", mime)
+                extracted = self._extract_gif_first_frame(content)
+                if extracted:
+                    return (extracted, "image/png")
+                
+                logger.warning("Could not process sticker with MIME type: %s", mime)
+                return None
+        except Exception:
+            logger.exception("Failed to download sticker")
+            return None
+    
+    async def download_animation(self, message: types.Message) -> Optional[tuple[bytes, str]]:
+        """Download animation/GIF from message. Returns (bytes, mime_type) or None."""
+        try:
+            if not message.animation:
+                return None
+            
+            file_id = message.animation.file_id
+            mime = getattr(message.animation, "mime_type", None) or "video/mp4"
+            
+            fobj = await self.bot.get_file(file_id)
+            file_path = getattr(fobj, "file_path", None)
+            if not file_path:
+                raise RuntimeError("missing animation file_path")
+            
+            url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+            timeout = httpx.Timeout(30.0, connect=10.0, read=30.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                
+                content = resp.content
+                
+                # Try to extract first frame from any animation/video
+                if mime == "image/gif":
+                    # For GIF, try to extract first frame
+                    extracted = self._extract_gif_first_frame(content)
+                    if extracted:
+                        return (extracted, "image/png")
+                    logger.warning("Failed to extract GIF first frame, skipping")
+                    return None
+                elif mime.startswith("video/"):
+                    # For video files (MP4, WebM, etc.), try to extract first frame
+                    logger.info("Attempting to extract first frame from video animation")
+                    extracted = await self._extract_video_sticker_frame(content)
+                    if extracted:
+                        return (extracted, "image/png")
+                    logger.warning("Failed to extract video first frame, skipping")
+                    return None
+                
+                # For other types, try to treat as image
+                logger.debug("Animation has MIME type: %s, attempting general image extraction", mime)
+                extracted = self._extract_gif_first_frame(content)
+                if extracted:
+                    return (extracted, "image/png")
+                
+                logger.warning("Could not process animation with MIME type: %s", mime)
+                return None
+        except Exception:
+            logger.exception("Failed to download animation")
+            return None
+    
     async def send_typing_action(self, chat_id: int) -> None:
         """Send typing action."""
         try:
@@ -133,6 +250,57 @@ class MediaService:
         if ext in {".bmp"}:
             return ".jpg"
         return ext
+    
+    def _convert_webp_to_png(self, webp_bytes: bytes) -> Optional[bytes]:
+        """Convert WebP image to PNG bytes."""
+        try:
+            img = Image.open(BytesIO(webp_bytes))
+            # Convert RGBA to RGB if needed for JPEG compatibility
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background for transparent images
+                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = rgb_img
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            return output.getvalue()
+        except Exception as exc:
+            logger.warning("Failed to convert WebP to PNG: %s", exc)
+            return None
+    
+    def _extract_gif_first_frame(self, gif_bytes: bytes) -> Optional[bytes]:
+        """Extract first frame from GIF and convert to PNG."""
+        try:
+            # Check if it's a valid image file (TGS stickers are not valid images)
+            if gif_bytes[:4] == b'\x00\x00\x00\x14ftypheic':
+                logger.warning("Skipping HEIC format (not supported)")
+                return None
+            
+            img = Image.open(BytesIO(gif_bytes))
+            
+            # Handle animated WEBP
+            if hasattr(img, 'is_animated') and img.is_animated:
+                logger.debug("Extracting first frame from animated image")
+                img.seek(0)
+            
+            # Get first frame (it's already selected by default)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Create white background for transparent images
+                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = rgb_img
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            return output.getvalue()
+        except Exception as exc:
+            logger.warning("Failed to extract GIF first frame: %s", exc)
+            return None
     
     def _guess_image_extension(self, url: str, content_type: Optional[str]) -> str:
         """Try to determine correct image extension by MIME and URL."""
@@ -412,4 +580,168 @@ class MediaService:
                 await msg.delete()
             except Exception:
                 pass
+
+    async def _extract_video_sticker_frame(self, video_bytes: bytes) -> Optional[bytes]:
+        """Extract first frame from video sticker."""
+        try:
+            import subprocess
+            import tempfile
+            import shutil
+            
+            # Check if ffmpeg is available
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                logger.warning("ffmpeg not found in PATH, attempting PIL extraction")
+                # Try PIL as fallback for MP4 (some MP4 files can be read by PIL)
+                try:
+                    img = Image.open(BytesIO(video_bytes))
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = rgb_img
+                    
+                    output = BytesIO()
+                    img.save(output, format='PNG')
+                    return output.getvalue()
+                except Exception:
+                    logger.debug("PIL extraction failed, video format not directly supported")
+                    return None
+            
+            # Use ffmpeg to extract first frame
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+                tmp_video.write(video_bytes)
+                tmp_video_path = tmp_video.name
+            
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_frame:
+                tmp_frame_path = tmp_frame.name
+            
+            try:
+                # Run ffmpeg with additional error suppression
+                result = subprocess.run(
+                    [ffmpeg_path, "-y", "-i", tmp_video_path, "-vframes", "1", "-q:v", "2", "-f", "image2", tmp_frame_path],
+                    capture_output=True,
+                    timeout=15,
+                    text=False
+                )
+                
+                if result.returncode == 0 and Path(tmp_frame_path).exists():
+                    with open(tmp_frame_path, "rb") as f:
+                        frame_bytes = f.read()
+                    if frame_bytes:
+                        logger.info("Successfully extracted video sticker frame")
+                        return frame_bytes
+                else:
+                    logger.debug("ffmpeg extraction failed with return code %d", result.returncode)
+                    if result.stderr:
+                        logger.debug("ffmpeg stderr: %s", result.stderr.decode('utf-8', errors='ignore')[:200])
+            except subprocess.TimeoutExpired:
+                logger.warning("ffmpeg timeout while extracting frame")
+            except Exception as exc:
+                logger.warning("ffmpeg extraction error: %s", exc)
+            finally:
+                try:
+                    Path(tmp_video_path).unlink()
+                    Path(tmp_frame_path).unlink()
+                except Exception:
+                    pass
+            
+            return None
+        except Exception as exc:
+            logger.warning("Failed to extract video sticker frame: %s", exc)
+            return None
+    
+    async def _convert_tgs_to_image(self, tgs_bytes: bytes) -> Optional[bytes]:
+        """Convert TGS animated sticker to static image."""
+        try:
+            import gzip
+            import json
+            import tempfile
+            
+            # TGS files are gzipped JSON (Lottie format)
+            try:
+                decompressed = gzip.decompress(tgs_bytes)
+                logger.debug("Successfully decompressed TGS sticker (%d bytes)", len(decompressed))
+            except Exception as exc:
+                logger.warning("Failed to decompress TGS: %s", exc)
+                return None
+            
+            # Try to use rlottie for rendering (if available)
+            rlottie_available = False
+            try:
+                from rlottie import LottieAnimation  # noqa: F401
+                rlottie_available = True
+            except ImportError:
+                logger.info("rlottie library not available for TGS conversion")
+            
+            if rlottie_available:
+                try:
+                    from rlottie import LottieAnimation  # noqa: F811
+                    
+                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_json:
+                        tmp_json.write(decompressed)
+                        tmp_json_path = tmp_json.name
+                    
+                    try:
+                        # Render first frame
+                        animation = LottieAnimation(tmp_json_path)
+                        width, height = animation.size()
+                        
+                        if width <= 0 or height <= 0:
+                            logger.warning("Invalid animation size: %dx%d", width, height)
+                            return None
+                        
+                        # Render first frame to PNG
+                        frame_buffer = animation.render_frame(0)
+                        
+                        # Convert buffer to PIL Image
+                        img = Image.frombytes('RGBA', (width, height), frame_buffer)
+                        
+                        # Convert RGBA to RGB with white background
+                        rgb_img = Image.new('RGB', (width, height), (255, 255, 255))
+                        rgb_img.paste(img, mask=img.split()[-1])
+                        
+                        output = BytesIO()
+                        rgb_img.save(output, format='PNG')
+                        logger.info("Successfully converted TGS sticker with rlottie")
+                        return output.getvalue()
+                    finally:
+                        try:
+                            Path(tmp_json_path).unlink()
+                        except Exception:
+                            pass
+                except ImportError:
+                    logger.info("rlottie not available for TGS conversion")
+                except Exception as exc:
+                    logger.warning("Failed to render TGS with rlottie: %s", exc)
+            
+            # Fallback: Try to create a placeholder from Lottie metadata
+            try:
+                data = json.loads(decompressed.decode('utf-8'))
+                
+                # Extract animation info from Lottie JSON
+                width = int(data.get('w', 512))
+                height = int(data.get('h', 512))
+                
+                # Ensure reasonable dimensions
+                if width <= 0 or width > 4096:
+                    width = 512
+                if height <= 0 or height > 4096:
+                    height = 512
+                
+                # Create a placeholder image with animation info
+                img = Image.new('RGB', (width, height), (100, 100, 100))
+                
+                output = BytesIO()
+                img.save(output, format='PNG')
+                logger.info("Created placeholder PNG for TGS sticker (%dx%d)", width, height)
+                return output.getvalue()
+            except Exception as exc:
+                logger.warning("Failed to create TGS placeholder: %s", exc)
+            
+            return None
+        except Exception as exc:
+            logger.warning("Failed to convert TGS sticker: %s", exc)
+            return None
 
