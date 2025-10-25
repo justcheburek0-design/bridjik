@@ -10,14 +10,15 @@ logger = logging.getLogger(__name__)
 class GeminiAPI:
     """Client for Google Gemini API."""
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         self.api_key = api_key
+        self.model = model
         genai.configure(api_key=api_key)
     
     async def transcribe_voice(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str | None:
         """Transcribe voice audio using Gemini 2.5 Flash."""
         try:
-            model = genai.GenerativeModel("gemini-2.5-flash")
+            model = genai.GenerativeModel(self.model)
             mt = (mime_type or "audio/ogg").strip().lower()
             
             # Normalize Telegram voice (OGG Opus) so Gemini decodes properly

@@ -60,6 +60,10 @@ class Config:
     RAG_EMB_MODEL: str = "jina-embeddings-v3"
     RAG_EMB_BATCH: int = 64
     
+    # AI Models
+    AI_MODEL: str = field(default_factory=lambda: os.getenv("AI_MODEL", "x-ai/grok-4-fast"))
+    GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    
     # Freeze options (hours)
     FREEZE_OPTIONS: tuple = (1, 2, 3, 4)
     

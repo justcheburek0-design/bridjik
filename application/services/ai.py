@@ -23,7 +23,7 @@ class AIService:
         openai_client: AsyncOpenAI,
         history_repo: IHistoryRepository,
         chat_logs_repo: IChatLogsRepository,
-        model: str = "x-ai/grok-4-fast"
+        model: str
     ):
         self.client = openai_client
         self.history_repo = history_repo

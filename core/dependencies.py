@@ -55,7 +55,7 @@ class Container:
             self.config.MC_CACHE_TTL
         )
         self.mb_api = MineBridgeAPI(self.config.MB_HOST)
-        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY)
+        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.GEMINI_MODEL)
         
         # Services
         self.subscription_service = SubscriptionService(
@@ -67,7 +67,8 @@ class Container:
         self.ai_service = AIService(
             self.openai_client,
             self.history_repo,
-            self.chat_logs_repo
+            self.chat_logs_repo,
+            self.config.AI_MODEL
         )
         self.media_service = MediaService(
             self.bot,
