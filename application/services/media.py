@@ -610,7 +610,7 @@ class MediaService:
                             voice_bytes = await tts_callback(voice_text)
                             if voice_bytes:
                                 m = await user_msg.answer_voice(
-                                    voice=BufferedInputFile(voice_bytes, filename="voice.ogg"),
+                                    voice=BufferedInputFile(voice_bytes, filename="voice.mp3"),
                                     caption=None
                                 )
                                 if m:

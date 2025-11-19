@@ -15,7 +15,9 @@ from utils.message_formatter import (
     format_chat_history_entry,
     format_chat_log_entry
 )
-
+import edge_tts
+import tempfile
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -74,51 +76,42 @@ class AIService:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
             return DEFAULT_ERROR_MESSAGE
     
-    async def generate_speech(self, text: str) -> Optional[bytes]:
-        """Generate speech from text using Coqui TTS."""
+    async def generate_speech(self, text: str, voice: str = "ru-RU-DmitryNeural") -> Optional[bytes]:
+        """Generate speech from text using Edge TTS.
+        
+        Args:
+            text: Text to convert to speech
+            voice: Voice to use (default: ru-RU-DmitryNeural)
+                   Available Russian voices:
+                   - ru-RU-DmitryNeural (male)
+                   - ru-RU-SvetlanaNeural (female)
+        
+        Returns:
+            Audio bytes in OGG format or None on error
+        """
         try:
-            import asyncio
-            import tempfile
-            from pathlib import Path
+            # Generate speech to temporary file
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+                tmp_path = tmp_file.name
             
-            # Run TTS in thread pool since it's synchronous
-            loop = asyncio.get_running_loop()
-            
-            def _generate():
-                from TTS.api import TTS
+            try:
+                # Generate speech using Edge TTS
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(tmp_path)
                 
-                # Initialize TTS with XTTS-v2 (supports Russian)
-                # Cache the model to avoid reloading
-                if not hasattr(self, '_tts_model'):
-                    logger.info("Loading XTTS-v2 model (this may take a while on first run)...")
-                    self._tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
-                    logger.info("XTTS-v2 model loaded successfully")
+                # Read the generated audio file
+                audio_bytes = Path(tmp_path).read_bytes()
                 
-                # Generate speech to temporary file
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                    tmp_path = tmp_file.name
-                
+                logger.info(f"Generated speech with Edge TTS (voice: {voice}, size: {len(audio_bytes)} bytes)")
+                return audio_bytes
+            finally:
+                # Clean up temp file
                 try:
-                    self._tts_model.tts_to_file(
-                        text=text,
-                        language="ru",
-                        file_path=tmp_path
-                    )
-                    
-                    # Read the file
-                    audio_bytes = Path(tmp_path).read_bytes()
-                    return audio_bytes
-                finally:
-                    # Clean up temp file
-                    try:
-                        Path(tmp_path).unlink()
-                    except Exception:
-                        pass
-            
-            audio_bytes = await loop.run_in_executor(None, _generate)
-            return audio_bytes
+                    Path(tmp_path).unlink()
+                except Exception:
+                    pass
         except Exception:
-            logger.exception("Failed to generate speech")
+            logger.exception("Failed to generate speech with Edge TTS")
             return None
     
     def _is_group_chat(self, message: Optional[types.Message]) -> bool:
