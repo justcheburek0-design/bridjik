@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # Media tag regex
-MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb|guess):([^\]]+)\]\]", re.IGNORECASE)
+MEDIA_TAG_RE = re.compile(r"\[\[(photo|sticker|kb|guess|voice):([^\]]+)\]\]", re.IGNORECASE)
 
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
 _IMAGE_HEADERS = {
@@ -467,7 +467,13 @@ class MediaService:
             return None
         return types.InlineKeyboardMarkup(inline_keyboard=rows)
     
-    async def long_text(self, msg: types.Message, user_msg: types.Message, text: str) -> list[tuple[int, str]]:
+    async def long_text(
+        self,
+        msg: types.Message,
+        user_msg: types.Message,
+        text: str,
+        tts_callback: Optional[callable] = None
+    ) -> list[tuple[int, str]]:
         """Send long text in parts with embedded photos by [[photo:...]] tags.
         
         Returns list of (message_id, text_content) for all sent messages.
@@ -476,9 +482,13 @@ class MediaService:
         if text is None:
             text = ""
         
+        logger.info(f"long_text processing: {text!r}")
+        matches = list(MEDIA_TAG_RE.finditer(text))
+        logger.info(f"Found {len(matches)} media tags")
+        
         actions: list[tuple[str, str]] = []
         pos = 0
-        for m in MEDIA_TAG_RE.finditer(text):
+        for m in matches:
             if m.start() > pos:
                 actions.append(("text", text[pos:m.start()]))
             kind = m.group(1).lower()
@@ -491,6 +501,8 @@ class MediaService:
                 actions.append(("kb", payload))
             elif kind == "guess":
                 actions.append(("guess", payload))
+            elif kind == "voice":
+                actions.append(("voice", payload))
             pos = m.end()
         if pos < len(text):
             actions.append(("text", text[pos:]))
@@ -589,6 +601,22 @@ class MediaService:
                             self.guesses_repo.set_guess(chat_id, pl)
                 except Exception:
                     logger.exception("failed to process [[guess:...]] tag")
+            elif kind == "voice":
+                if tts_callback:
+                    try:
+                        voice_text = (payload or "").strip()
+                        if voice_text:
+                            await self.send_typing_action(user_msg.chat.id)
+                            voice_bytes = await tts_callback(voice_text)
+                            if voice_bytes:
+                                m = await user_msg.answer_voice(
+                                    voice=BufferedInputFile(voice_bytes, filename="voice.ogg"),
+                                    caption=None
+                                )
+                                if m:
+                                    sent_messages.append((m.message_id, f"[Голосовое: {voice_text}]"))
+                    except Exception:
+                        logger.exception("failed to send voice message")
         
         if first_text_pending:
             try:

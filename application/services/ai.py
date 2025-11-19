@@ -74,6 +74,53 @@ class AIService:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
             return DEFAULT_ERROR_MESSAGE
     
+    async def generate_speech(self, text: str) -> Optional[bytes]:
+        """Generate speech from text using Coqui TTS."""
+        try:
+            import asyncio
+            import tempfile
+            from pathlib import Path
+            
+            # Run TTS in thread pool since it's synchronous
+            loop = asyncio.get_running_loop()
+            
+            def _generate():
+                from TTS.api import TTS
+                
+                # Initialize TTS with XTTS-v2 (supports Russian)
+                # Cache the model to avoid reloading
+                if not hasattr(self, '_tts_model'):
+                    logger.info("Loading XTTS-v2 model (this may take a while on first run)...")
+                    self._tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+                    logger.info("XTTS-v2 model loaded successfully")
+                
+                # Generate speech to temporary file
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                    tmp_path = tmp_file.name
+                
+                try:
+                    self._tts_model.tts_to_file(
+                        text=text,
+                        language="ru",
+                        file_path=tmp_path
+                    )
+                    
+                    # Read the file
+                    audio_bytes = Path(tmp_path).read_bytes()
+                    return audio_bytes
+                finally:
+                    # Clean up temp file
+                    try:
+                        Path(tmp_path).unlink()
+                    except Exception:
+                        pass
+            
+            audio_bytes = await loop.run_in_executor(None, _generate)
+            return audio_bytes
+        except Exception:
+            logger.exception("Failed to generate speech")
+            return None
+    
     def _is_group_chat(self, message: Optional[types.Message]) -> bool:
         """Check if message is from a group chat.
         

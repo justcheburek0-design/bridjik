@@ -329,7 +329,12 @@ async def auto_reply(
             answer = ERROR_MESSAGE
         
         # Send response with media tag support
-        sent_messages = await media_service.long_text(msg, message, answer)
+        sent_messages = await media_service.long_text(
+            msg, 
+            message, 
+            answer,
+            tts_callback=ai_service.generate_speech
+        )
         
         # Save incoming message and outgoing response to logs
         _save_incoming_message(chat_logs_repo, message, prompt)

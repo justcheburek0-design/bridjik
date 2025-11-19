@@ -50,11 +50,20 @@ class WhitelistHTMLSanitizer(HTMLParser):
 
     def handle_endtag(self, tag):
         tag = tag.lower()
-        if not self.tag_stack:
-            return
-        top = self.tag_stack.pop()
-        if top == tag:
-            self.out.append(f"</{tag}>")
+        
+        # Find tag in stack (reverse search)
+        index = -1
+        for i in range(len(self.tag_stack) - 1, -1, -1):
+            if self.tag_stack[i] == tag:
+                index = i
+                break
+        
+        if index != -1:
+            # Close all tags up to the found tag
+            while len(self.tag_stack) > index:
+                top = self.tag_stack.pop()
+                if top:
+                    self.out.append(f"</{top}>")
 
     def handle_startendtag(self, tag, attrs):
         tag = tag.lower()
