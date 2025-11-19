@@ -1,6 +1,6 @@
 """Repository interfaces."""
 from abc import ABC, abstractmethod
-from typing import Optional, List, Tuple, Deque
+from typing import Optional, List, Tuple
 
 
 class IHistoryRepository(ABC):
@@ -26,13 +26,18 @@ class IChatLogsRepository(ABC):
     """Interface for chat logs repository."""
     
     @abstractmethod
-    def add_message(self, chat_id: int, author: str, is_bot: bool, text: str) -> None:
+    def add_message(self, chat_id: int, author: str, is_bot: bool, text: str, message_id: Optional[int] = None) -> None:
         """Add message to chat logs."""
         pass
     
     @abstractmethod
-    def get_recent_messages(self, chat_id: int, limit: int) -> List[Tuple[str, bool, str]]:
-        """Get recent messages. Returns list of (author, is_bot, text) tuples."""
+    def get_recent_messages(self, chat_id: int, limit: int) -> List[Tuple[Optional[int], str, bool, str]]:
+        """Get recent messages. Returns list of (message_id, author, is_bot, text) tuples."""
+        pass
+    
+    @abstractmethod
+    def get_message_by_id(self, chat_id: int, message_id: int) -> Optional[Tuple[str, bool, str]]:
+        """Get message by message_id. Returns (author, is_bot, text) or None if not found."""
         pass
 
 

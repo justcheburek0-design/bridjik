@@ -6,7 +6,6 @@ from application.services.subscription import SubscriptionService
 from infrastructure.external.mc_api import MinecraftAPI
 from infrastructure.external.mb_api import MineBridgeAPI
 from presentation.formatters import Formatter
-from utils.text import shorten
 from presentation.decorators import handle_errors
 
 
@@ -23,7 +22,7 @@ async def cmd_status(message: types.Message, mc_api: MinecraftAPI):
         text = mc_api.format_status_text(payload)
         await msg.edit_text(text)
     except Exception as e:
-        await msg.edit_text(f"⚠️ Не удалось получить статус: `{shorten(str(e), 300)}`")
+        await msg.edit_text(f"⚠️ Не удалось получить статус: `{str(e)}`")
 
 
 @router.message(Command("player"))
@@ -54,5 +53,5 @@ async def cmd_player(
         text = formatter.format_player_info(player_info)
         await msg.edit_text(text)
     except Exception as e:
-        await msg.edit_text(f"❌ Ошибка при запросе: {shorten(str(e), 300)}")
+        await msg.edit_text(f"❌ Ошибка при запросе: {str(e)}")
 

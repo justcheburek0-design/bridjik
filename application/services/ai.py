@@ -1,18 +1,32 @@
 """AI service for completions."""
 import logging
 import base64
-from typing import Optional
+from typing import Optional, List
 from openai import AsyncOpenAI, RateLimitError, APIError
 from aiogram import types
-from aiogram.enums import ChatType
 
-from domain.entities import MessageContext, User
+from domain.entities import MessageContext
 from domain.interfaces import IHistoryRepository, IChatLogsRepository
 from utils.html_edit import remove as remove_html
-from utils.text import shorten
+from utils.message import get_message_text, get_reply_quote
+from utils.chat_helpers import is_group_chat, get_author_name, get_message_id, get_replied_message_id, is_bot_message
+from utils.message_formatter import (
+    format_reply_message,
+    format_chat_history_entry,
+    format_chat_log_entry
+)
 
 
 logger = logging.getLogger(__name__)
+
+# Constants
+HTML_FORMATTING_INSTRUCTION = (
+    "\n\nВажно: Используй HTML-разметку для форматирования ответа "
+    "(<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! "
+    "Все ссылки вставляй сразу в текст <a href=\"\"></a>"
+)
+DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
+TEMPERATURE = 1.0
 
 
 class AIService:
@@ -38,53 +52,91 @@ class AIService:
         save_history: bool = True
     ) -> str:
         """Generate AI completion for given context."""
-        # Determine if we're in a group chat
-        use_thread = False
-        if message is not None:
-            chat_type = getattr(message.chat, "type", None)
-            if chat_type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                use_thread = True
+        use_thread = self._is_group_chat(message)
+        full_system_prompt = system_prompt + HTML_FORMATTING_INSTRUCTION
         
-        # Build system prompt
-        full_system_prompt = system_prompt + "\n\nВажно: Используй HTML-разметку для форматирования ответа (<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! Все ссылки вставляй сразу в текст <a href=\"\"></a>"
-        
-        # Build user input
         user_input = await self._build_user_input(context, use_thread, message)
+        messages = self._build_messages(full_system_prompt, user_input, context)
         
-        # Prepare message content
-        messages = [{"role": "system", "content": full_system_prompt}]
+        try:
+            response = await self._call_openai(messages)
+            text = self._process_response(response)
+            
+            if save_history and text and not use_thread:
+                self.history_repo.add_assistant_message(
+                    context.chat.id,
+                    context.user.id,
+                    text
+                )
+            
+            return text
+        except (RateLimitError, APIError) as e:
+            logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
+            return DEFAULT_ERROR_MESSAGE
+    
+    def _is_group_chat(self, message: Optional[types.Message]) -> bool:
+        """Check if message is from a group chat.
+        
+        Args:
+            message: Telegram message or None
+            
+        Returns:
+            True if message is from a group chat
+        """
+        if message is None:
+            return False
+        
+        chat_type = getattr(message.chat, "type", None)
+        return is_group_chat(chat_type)
+    
+    def _build_messages(
+        self,
+        system_prompt: str,
+        user_input: str,
+        context: MessageContext
+    ) -> List[dict]:
+        """Build messages list for OpenAI API.
+        
+        Args:
+            system_prompt: System prompt text
+            user_input: User input text
+            context: Message context
+            
+        Returns:
+            List of message dictionaries
+        """
+        messages = [{"role": "system", "content": system_prompt}]
         
         if context.has_image and context.image_bytes:
             user_content = [
                 {"type": "text", "text": user_input},
-                {"type": "image_url", "image_url": {"url": self._make_data_url(context.image_bytes, context.mime_type)}},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": self._make_data_url(context.image_bytes, context.mime_type)
+                    }
+                },
             ]
         else:
             user_content = user_input
         
         messages.append({"role": "user", "content": user_content})
-        
-        # Call OpenAI
-        try:
-            resp = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=1,
-            )
-            text = (resp.choices[0].message.content or "").strip()
-            text = remove_html(text)
-            
-            # Save to history if needed
-            if save_history and text:
-                if not use_thread:
-                    self.history_repo.add_assistant_message(context.chat.id, context.user.id, text)
-                else:
-                    self.chat_logs_repo.add_message(context.chat.id, "Ассистент", True, text)
-            
-            return text
-        except (RateLimitError, APIError) as e:
-            logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
-            return "Произошла ошибка при обращении к AI. Попробуйте позже."
+        return messages
+    
+    async def _call_openai(self, messages: List[dict]) -> dict:
+        """Call OpenAI API."""
+        return await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=TEMPERATURE,
+        )
+    
+    def _process_response(self, response: dict) -> str:
+        """Process OpenAI API response."""
+        content = response.choices[0].message.content
+        logger.info(f"OpenAI raw response: {content!r}")
+        text = (content or "").strip()
+        return remove_html(text)
     
     async def _build_user_input(
         self,
@@ -92,39 +144,159 @@ class AIService:
         use_thread: bool,
         message: Optional[types.Message]
     ) -> str:
-        """Build user input with history or chat context."""
-        lines = []
+        """Build user input with history or chat context.
+        
+        Args:
+            context: Message context
+            use_thread: Whether to use thread (group chat)
+            message: Telegram message
+            
+        Returns:
+            Formatted user input string
+        """
+        lines: List[str] = []
         
         # Add RAG context if available
-        if context.rag_context:
-            lines.append(context.rag_context)
-            lines.append("")
+        self._add_rag_context(lines, context)
         
         # Add history or chat logs
         if use_thread and message:
-            # Group chat: recent messages
-            recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 12)
-            if recent:
-                lines.append("Контекст чата: последние сообщения:")
-                for author, is_bot, text in recent:
-                    role = "Ассистент" if is_bot else author
-                    lines.append(f"{role}: {text}")
-                lines.append("Конец контекста")
+            self._add_group_chat_context(lines, context, message)
         else:
-            # Private chat: conversation history
-            history = self.history_repo.get_history(context.chat.id, context.user.id)
-            if history:
-                lines.append("История: последние (до 5):")
-                for role, text in history:
-                    who = "Пользователь" if role == "user" else "Ассистент"
-                    lines.append(f"{who}: {text}")
-                lines.append("Конец истории")
+            self._add_private_chat_context(lines, context, message)
         
-        # Add current message
-        lines.append(f"Пользователь ({context.user.get_display_name()}): {context.prompt}")
+        # Add current message (only if not already added as reply)
+        self._add_current_message(lines, context, message)
         lines.append("Ответ:")
         
         return "\n".join(lines)
+    
+    def _add_rag_context(self, lines: List[str], context: MessageContext) -> None:
+        """Add RAG context to lines.
+        
+        Args:
+            lines: List to append to
+            context: Message context
+        """
+        if context.rag_context:
+            lines.append(context.rag_context)
+            lines.append("")
+    
+    def _add_group_chat_context(
+        self,
+        lines: List[str],
+        context: MessageContext,
+        message: types.Message
+    ) -> None:
+        """Add group chat context to lines.
+        
+        Args:
+            lines: List to append to
+            context: Message context
+            message: Telegram message
+        """
+        # Add reply message if present
+        if message.reply_to_message:
+            self._add_reply_message(lines, message, is_private=False)
+        
+        # Add recent messages
+        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 12)
+        if recent:
+            lines.append("Контекст чата: последние сообщения:")
+            for msg_data in recent:
+                message_id, author, is_bot, text = msg_data
+                lines.append(format_chat_log_entry(message_id, author, is_bot, text))
+            lines.append("Конец контекста")
+    
+    def _add_private_chat_context(
+        self,
+        lines: List[str],
+        context: MessageContext,
+        message: Optional[types.Message]
+    ) -> None:
+        """Add private chat context to lines.
+        
+        Args:
+            lines: List to append to
+            context: Message context
+            message: Telegram message
+        """
+        # Add conversation history
+        history = self.history_repo.get_history(context.chat.id, context.user.id)
+        if history:
+            lines.append("История: последние (до 5):")
+            for role, text in history:
+                lines.append(format_chat_history_entry(role, text))
+            lines.append("Конец истории")
+        
+        # Add reply message if present
+        if message and message.reply_to_message:
+            self._add_reply_message(lines, message, is_private=True)
+    
+    def _add_reply_message(
+        self,
+        lines: List[str],
+        message: types.Message,
+        is_private: bool
+    ) -> None:
+        """Add formatted reply message to lines.
+        
+        Args:
+            lines: List to append to
+            message: Telegram message
+            is_private: Whether this is a private chat
+        """
+        if not message.reply_to_message:
+            return
+
+        replied_msg = message.reply_to_message
+        replied_msg_id = get_message_id(replied_msg)
+        
+        # Get author name
+        if is_private:
+            author_name = "Пользователь" if not is_bot_message(replied_msg) else "Ассистент"
+        else:
+            author_name = get_author_name(replied_msg, "unknown")
+            if is_bot_message(replied_msg):
+                author_name = "Ассистент"
+        
+        # Get text content
+        text = get_message_text(replied_msg)
+        
+        # If text is empty or placeholder, try to fetch from logs (for group chats)
+        if (not text or text == "(пусто)") and not is_private:
+            log_msg = self.chat_logs_repo.get_message_by_id(message.chat.id, replied_msg_id)
+            if log_msg:
+                _, _, log_text = log_msg
+                if log_text:
+                    text = log_text
+
+        # Format for AI
+        lines.append(f"[В ответ на сообщение от {author_name}]")
+        if text and text != "(пусто)":
+            lines.append(f"Текст сообщения: \"{text}\"")
+        else:
+            lines.append("Текст сообщения: (недоступен)")
+        lines.append("[/В ответ]")
+    
+    def _add_current_message(
+        self,
+        lines: List[str],
+        context: MessageContext,
+        message: Optional[types.Message]
+    ) -> None:
+        """Add current message to lines if not already added as reply.
+        
+        Args:
+            lines: List to append to
+            context: Message context
+            message: Telegram message
+        """
+        if message and message.reply_to_message:
+            return
+        
+        display_name = context.user.get_display_name()
+        lines.append(f"Пользователь ({display_name}): {context.prompt}")
     
     def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
         """Create data URL for image."""

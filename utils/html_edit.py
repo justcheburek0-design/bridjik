@@ -71,6 +71,11 @@ class WhitelistHTMLSanitizer(HTMLParser):
         self.out.append(f"&#{name};")
 
     def get_html(self):
+        # Close any remaining tags in stack
+        while self.tag_stack:
+            top = self.tag_stack.pop()
+            if top:
+                self.out.append(f"</{top}>")
         return "".join(self.out)
 
 

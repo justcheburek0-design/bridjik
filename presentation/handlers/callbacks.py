@@ -148,11 +148,12 @@ async def callback_any(
                     rag_service=rag_service
                 )
                 
+                # Send game start message
+                tmp = await message.reply("🎲 Запускаю игру...") if message else None
+                
                 # Get AI response
                 answer = await ai_service.complete(context, system_prompt, message)
                 
-                # Send game start message
-                tmp = await message.reply("🎲 Запускаю игру...") if message else None
                 if tmp:
                     await media_service.long_text(tmp, message, answer)
                 else:

@@ -38,6 +38,10 @@ async def on_startup(container: Container):
         me = await container.bot.get_me()
         logger.info(f"Bot started: @{me.username or 'unknown'}")
         
+        # Update config with actual bot username
+        if me.username:
+            container.config.BOT_USERNAME = me.username
+        
         # Log bot restart to chat logs for all known chats
         restart_message = f"🔄 Бот перезагружен (версия {container.config.VERSION})"
         for chat_id in container.chat_logs_repo._logs.keys():
@@ -45,7 +49,8 @@ async def on_startup(container: Container):
                 chat_id=chat_id,
                 author="System",
                 is_bot=True,
-                text=restart_message
+                text=restart_message,
+                message_id=None  # System message doesn't have Telegram message_id
             )
         logger.info(f"Logged restart notification to {len(container.chat_logs_repo._logs)} chats")
     except Exception:

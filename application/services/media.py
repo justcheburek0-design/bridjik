@@ -467,8 +467,11 @@ class MediaService:
             return None
         return types.InlineKeyboardMarkup(inline_keyboard=rows)
     
-    async def long_text(self, msg: types.Message, user_msg: types.Message, text: str):
-        """Send long text in parts with embedded photos by [[photo:...]] tags."""
+    async def long_text(self, msg: types.Message, user_msg: types.Message, text: str) -> list[tuple[int, str]]:
+        """Send long text in parts with embedded photos by [[photo:...]] tags.
+        
+        Returns list of (message_id, text_content) for all sent messages.
+        """
         CHUNK = 4000
         if text is None:
             text = ""
@@ -492,12 +495,12 @@ class MediaService:
         if pos < len(text):
             actions.append(("text", text[pos:]))
         
-        sent_any_text = False
+        sent_messages: list[tuple[int, str]] = []
         last_text_msg: Optional[types.Message] = None
         pending_kb: Optional[types.InlineKeyboardMarkup] = None
         
         async def send_text_blocks(s: str, first_edit: bool):
-            nonlocal sent_any_text, last_text_msg, pending_kb
+            nonlocal last_text_msg, pending_kb
             s = s.strip()
             if not s:
                 return
@@ -509,7 +512,9 @@ class MediaService:
                         pending_kb = None
                     else:
                         last_text_msg = await msg.edit_text(parts[0])
-                    sent_any_text = True
+                    
+                    if last_text_msg:
+                        sent_messages.append((last_text_msg.message_id, parts[0]))
                 except Exception:
                     logger.exception("failed to edit initial message with text")
                     last_text_msg = await user_msg.answer(parts[0])
@@ -519,13 +524,19 @@ class MediaService:
                         except Exception:
                             logger.exception("failed to set pending keyboard on fallback message")
                         pending_kb = None
-                    sent_any_text = True
+                    
+                    if last_text_msg:
+                        sent_messages.append((last_text_msg.message_id, parts[0]))
+                
                 for part in parts[1:]:
                     last_text_msg = await user_msg.answer(part)
+                    if last_text_msg:
+                        sent_messages.append((last_text_msg.message_id, part))
             else:
                 for part in parts:
                     last_text_msg = await user_msg.answer(part)
-                    sent_any_text = True
+                    if last_text_msg:
+                        sent_messages.append((last_text_msg.message_id, part))
         
         first_text_pending = True
         for kind, payload in actions:
@@ -539,7 +550,9 @@ class MediaService:
                     logger.warning("photo not found or unsupported: %s", payload)
                     continue
                 try:
-                    await user_msg.answer_photo(photo=photo_arg)
+                    m = await user_msg.answer_photo(photo=photo_arg)
+                    if m:
+                        sent_messages.append((m.message_id, "[Изображение]"))
                 except Exception:
                     logger.exception("failed to send photo: %s", payload)
             elif kind == "sticker":
@@ -548,7 +561,9 @@ class MediaService:
                     logger.warning("sticker not found or unsupported: %s", payload)
                     continue
                 try:
-                    await user_msg.answer_sticker(sticker=sticker_id)
+                    m = await user_msg.answer_sticker(sticker=sticker_id)
+                    if m:
+                        sent_messages.append((m.message_id, "[Стикер]"))
                 except Exception:
                     logger.exception("failed to send sticker: %s", payload)
             elif kind == "kb":
@@ -580,6 +595,8 @@ class MediaService:
                 await msg.delete()
             except Exception:
                 pass
+        
+        return sent_messages
 
     async def _extract_video_sticker_frame(self, video_bytes: bytes) -> Optional[bytes]:
         """Extract first frame from video sticker."""
