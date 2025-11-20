@@ -12,13 +12,13 @@ class IHistoryRepository(ABC):
         pass
     
     @abstractmethod
-    def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
+    def add_assistant_message(self, chat_id: int, user_id: int, text: str, reasoning_details: Optional[dict] = None) -> None:
         """Add assistant message to history."""
         pass
     
     @abstractmethod
-    def get_history(self, chat_id: int, user_id: int) -> List[Tuple[str, str]]:
-        """Get conversation history. Returns list of (role, text) tuples."""
+    def get_history(self, chat_id: int, user_id: int) -> List[dict]:
+        """Get conversation history. Returns list of message dicts."""
         pass
 
 

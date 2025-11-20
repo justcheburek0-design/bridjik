@@ -15,7 +15,7 @@ class HistoryRepository(IHistoryRepository):
     def __init__(self, file_path: Path, max_messages: int = 5):
         self.file_path = file_path
         self.max_messages = max_messages
-        self._history: Dict[str, Deque[Tuple[str, str]]] = defaultdict(
+        self._history: Dict[str, Deque[dict]] = defaultdict(
             lambda: deque(maxlen=max_messages)
         )
         self._load()
@@ -44,11 +44,16 @@ class HistoryRepository(IHistoryRepository):
                 if not parsed_key:
                     continue
                 
-                dq: Deque[Tuple[str, str]] = deque(maxlen=self.max_messages)
+                dq: Deque[dict] = deque(maxlen=self.max_messages)
                 for row in items:
                     try:
-                        role, msg = row
-                        dq.append((str(role), shorten(str(msg))))
+                        if isinstance(row, list) and len(row) >= 2:
+                            # Old format: [role, text]
+                            role, msg = row[0], row[1]
+                            dq.append({"role": str(role), "content": shorten(str(msg))})
+                        elif isinstance(row, dict):
+                            # New format: dict
+                            dq.append(row)
                     except Exception:
                         continue
                 self._history[key] = dq
@@ -60,7 +65,7 @@ class HistoryRepository(IHistoryRepository):
         try:
             out: Dict[str, list] = {}
             for key, dq in self._history.items():
-                out[key] = [[role, msg] for role, msg in dq]
+                out[key] = list(dq)
             
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
             self.file_path.write_text(
@@ -73,16 +78,19 @@ class HistoryRepository(IHistoryRepository):
     def add_user_message(self, chat_id: int, user_id: int, text: str) -> None:
         """Add user message to history."""
         key = self._make_key(chat_id, user_id)
-        self._history[key].append(("user", shorten(text)))
+        self._history[key].append({"role": "user", "content": shorten(text)})
         self._save()
     
-    def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
+    def add_assistant_message(self, chat_id: int, user_id: int, text: str, reasoning_details: Optional[dict] = None) -> None:
         """Add assistant message to history."""
         key = self._make_key(chat_id, user_id)
-        self._history[key].append(("assistant", shorten(text)))
+        msg = {"role": "assistant", "content": shorten(text)}
+        if reasoning_details:
+            msg["reasoning_details"] = reasoning_details
+        self._history[key].append(msg)
         self._save()
     
-    def get_history(self, chat_id: int, user_id: int) -> List[Tuple[str, str]]:
+    def get_history(self, chat_id: int, user_id: int) -> List[dict]:
         """Get conversation history."""
         key = self._make_key(chat_id, user_id)
         return list(self._history.get(key, deque()))

@@ -1,7 +1,7 @@
 """AI service for completions."""
 import logging
 import base64
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from openai import AsyncOpenAI, RateLimitError, APIError
 from aiogram import types
 
@@ -52,29 +52,30 @@ class AIService:
         system_prompt: str,
         message: Optional[types.Message] = None,
         save_history: bool = True
-    ) -> str:
+    ) -> Tuple[str, Optional[dict]]:
         """Generate AI completion for given context."""
         use_thread = self._is_group_chat(message)
         full_system_prompt = system_prompt + HTML_FORMATTING_INSTRUCTION
         
         user_input = await self._build_user_input(context, use_thread, message)
-        messages = self._build_messages(full_system_prompt, user_input, context)
+        messages = self._build_messages(full_system_prompt, user_input, context, use_thread)
         
         try:
             response = await self._call_openai(messages)
-            text = self._process_response(response)
+            text, reasoning = self._process_response(response)
             
             if save_history and text and not use_thread:
                 self.history_repo.add_assistant_message(
                     context.chat.id,
                     context.user.id,
-                    text
+                    text,
+                    reasoning_details=reasoning
                 )
             
-            return text
+            return text, reasoning
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
-            return DEFAULT_ERROR_MESSAGE
+            return DEFAULT_ERROR_MESSAGE, None
     
     async def generate_speech(self, text: str, voice: str = "ru-RU-DmitryNeural") -> Optional[bytes]:
         """Generate speech from text using Edge TTS.
@@ -133,7 +134,8 @@ class AIService:
         self,
         system_prompt: str,
         user_input: str,
-        context: MessageContext
+        context: MessageContext,
+        use_thread: bool
     ) -> List[dict]:
         """Build messages list for OpenAI API.
         
@@ -146,6 +148,11 @@ class AIService:
             List of message dictionaries
         """
         messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add history for private chats
+        if not use_thread:
+            history = self.history_repo.get_history(context.chat.id, context.user.id)
+            messages.extend(history)
         
         if context.has_image and context.image_bytes:
             user_content = [
@@ -169,14 +176,18 @@ class AIService:
             model=self.model,
             messages=messages,
             temperature=TEMPERATURE,
+            extra_body={"reasoning": {"enabled": True}}
         )
     
-    def _process_response(self, response: dict) -> str:
+    def _process_response(self, response: dict) -> Tuple[str, Optional[dict]]:
         """Process OpenAI API response."""
-        content = response.choices[0].message.content
+        message = response.choices[0].message
+        content = message.content
+        reasoning = getattr(message, "reasoning_details", None)
+        
         logger.info(f"OpenAI raw response: {content!r}")
         text = (content or "").strip()
-        return remove_html(text)
+        return remove_html(text), reasoning
     
     async def _build_user_input(
         self,
@@ -203,7 +214,10 @@ class AIService:
         if use_thread and message:
             self._add_group_chat_context(lines, context, message)
         else:
-            self._add_private_chat_context(lines, context, message)
+            # For private chats, history is added as separate messages in _build_messages
+            # We only add reply context here if present
+            if message and message.reply_to_message:
+                self._add_reply_message(lines, message, is_private=True)
         
         # Add current message (only if not already added as reply)
         self._add_current_message(lines, context, message)

@@ -319,10 +319,11 @@ async def auto_reply(
         )
         
         # Get AI response
-        answer = await ai_service.complete(
+        answer, reasoning = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
-            message=message
+            message=message,
+            save_history=False  # We handle history saving here to ensure correct order
         )
         
         if not answer:
@@ -352,7 +353,7 @@ async def auto_reply(
         if user_id and chat_type == ChatType.PRIVATE:
             msg_to_save = build_message_text_for_save(message, prompt)
             history_repo.add_user_message(chat_id, user_id, msg_to_save)
-            history_repo.add_assistant_message(chat_id, user_id, answer)
+            history_repo.add_assistant_message(chat_id, user_id, answer, reasoning_details=reasoning)
 
     except Exception as e:
         logger.exception("Error in auto_reply")
