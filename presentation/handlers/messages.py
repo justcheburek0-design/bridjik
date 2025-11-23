@@ -195,10 +195,6 @@ def _should_answer(message: types.Message, bot_username: str) -> bool:
     if len(text) >= 25:
         score += 1
     
-    # If reply to any message (not necessarily bot), lower threshold
-    if message.reply_to_message:
-        return score >= 2
-    
     return score >= 3
 
 
