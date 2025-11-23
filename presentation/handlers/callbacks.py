@@ -152,7 +152,7 @@ async def callback_any(
                 tmp = await message.reply("🎲 Запускаю игру...") if message else None
                 
                 # Get AI response
-                answer = await ai_service.complete(context, system_prompt, message)
+                answer, _ = await ai_service.complete(context, system_prompt, message)
                 
                 if tmp:
                     await media_service.long_text(tmp, message, answer)
