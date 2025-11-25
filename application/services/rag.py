@@ -196,7 +196,13 @@ class RAGService:
                 logger.warning("RAG: no chunks produced (empty kb?)")
     
     async def search(self, query: str) -> List[Tuple[dict, float]]:
-        """Return top-k most relevant chunks from knowledge base."""
+        """Return dynamically selected relevant chunks from knowledge base.
+        
+        Chunks are selected based on:
+        1. Similarity threshold - only chunks above RAG_SIMILARITY_THRESHOLD are considered
+        2. Min/Max bounds - at least RAG_MIN_CHUNKS, at most RAG_MAX_CHUNKS
+        3. Priority weighting - chunks with higher priority get boosted scores
+        """
         await self._ensure_rag_index()
         
         if self._rag_vecs is None or len(self._rag_chunks) == 0:
@@ -211,13 +217,55 @@ class RAGService:
         q /= max(np.linalg.norm(q), 1e-12)
         sims = (self._rag_vecs @ q.T).reshape(-1)
         
+        # Apply priority weighting
         weights = np.array([
             max(0.1, (float((c.get("priority", 5) or 5)) / 5.0))
             for c in self._rag_chunks
         ], dtype="float32")
         adj = sims * weights
-        top_idx = np.argsort(-adj)[:self.config.RAG_TOP_K]
-        return [(self._rag_chunks[i], float(adj[i])) for i in top_idx]
+        
+        # Sort by adjusted similarity
+        sorted_idx = np.argsort(-adj)
+        
+        # Dynamic selection based on adaptive threshold
+        selected_idx = []
+        top_score = float(adj[sorted_idx[0]]) if len(sorted_idx) > 0 else 0.0
+        
+        # Adaptive threshold: chunks must be within threshold% of top score
+        # RAG_SIMILARITY_THRESHOLD now represents the minimum relative score (0.0-1.0)
+        # e.g., 0.6 means chunk score must be >= 60% of top score
+        adaptive_threshold = top_score * self.config.RAG_SIMILARITY_THRESHOLD
+        
+        for idx in sorted_idx:
+            score = float(adj[idx])
+            
+            # Always include minimum number of chunks (even if below threshold)
+            if len(selected_idx) < self.config.RAG_MIN_CHUNKS:
+                selected_idx.append(idx)
+            # Include chunks above adaptive threshold up to maximum
+            elif score >= adaptive_threshold and len(selected_idx) < self.config.RAG_MAX_CHUNKS:
+                selected_idx.append(idx)
+            # Stop if we've reached max or scores are too low
+            else:
+                break
+        
+        logger.debug(
+            "RAG: selected %d chunks (top_score=%.3f, threshold=%.2f, adaptive_min=%.3f, min=%d, max=%d)",
+            len(selected_idx),
+            top_score,
+            self.config.RAG_SIMILARITY_THRESHOLD,
+            adaptive_threshold,
+            self.config.RAG_MIN_CHUNKS,
+            self.config.RAG_MAX_CHUNKS
+        )
+        
+        # Log individual chunk scores for debugging
+        if selected_idx:
+            logger.debug("RAG: chunk scores: %s", 
+                        ", ".join([f"{i}:{float(adj[i]):.3f}" for i in selected_idx[:5]]) + 
+                        (f" ... (+{len(selected_idx)-5} more)" if len(selected_idx) > 5 else ""))
+        
+        return [(self._rag_chunks[i], float(adj[i])) for i in selected_idx]
     
     async def build_full_context(
         self,

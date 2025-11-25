@@ -314,6 +314,10 @@ async def auto_reply(
             mime_type=mime_type
         )
         
+        # Save incoming message to logs BEFORE generating AI response
+        # This ensures the current message is included in chat context
+        _save_incoming_message(chat_logs_repo, message, prompt)
+        
         # Get AI response
         answer, reasoning = await ai_service.complete(
             context=context,
@@ -332,9 +336,6 @@ async def auto_reply(
             answer,
             tts_callback=ai_service.generate_speech
         )
-        
-        # Save incoming message and outgoing response to logs
-        _save_incoming_message(chat_logs_repo, message, prompt)
         
         # Save the bot's answer to logs with message_id
         chat_id = message.chat.id
