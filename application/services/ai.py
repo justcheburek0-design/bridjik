@@ -55,7 +55,7 @@ class AIService:
     ) -> Tuple[str, Optional[dict]]:
         """Generate AI completion for given context."""
         use_thread = self._is_group_chat(message)
-        full_system_prompt = system_prompt + HTML_FORMATTING_INSTRUCTION
+        full_system_prompt = system_prompt
         
         user_input = await self._build_user_input(context, use_thread, message)
         messages = self._build_messages(full_system_prompt, user_input, context, use_thread)
@@ -254,7 +254,7 @@ class AIService:
             self._add_reply_message(lines, message, is_private=False)
         
         # Add recent messages
-        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 12)
+        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 10)
         if recent:
             lines.append("Контекст чата: последние сообщения:")
             for msg_data in recent:
