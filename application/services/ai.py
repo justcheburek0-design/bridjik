@@ -1,12 +1,15 @@
 """AI service for completions."""
 import logging
 import base64
-from typing import Optional, List, Tuple
+import json
+from typing import Optional, List, Tuple, Any
 from openai import AsyncOpenAI, RateLimitError, APIError
 from aiogram import types
 
 from domain.entities import MessageContext
 from domain.interfaces import IHistoryRepository, IChatLogsRepository
+from infrastructure.external.mc_api import MinecraftAPI
+from infrastructure.external.mb_api import MineBridgeAPI
 from utils.html_edit import remove as remove_html
 from utils.message import get_message_text, get_reply_quote
 from utils.chat_helpers import is_group_chat, get_author_name, get_message_id, get_replied_message_id, is_bot_message
@@ -39,12 +42,16 @@ class AIService:
         openai_client: AsyncOpenAI,
         history_repo: IHistoryRepository,
         chat_logs_repo: IChatLogsRepository,
-        model: str
+        model: str,
+        mb_api: MineBridgeAPI,
+        mc_api: MinecraftAPI
     ):
         self.client = openai_client
         self.history_repo = history_repo
         self.chat_logs_repo = chat_logs_repo
         self.model = model
+        self.mb_api = mb_api
+        self.mc_api = mc_api
     
     async def complete(
         self,
@@ -59,24 +66,119 @@ class AIService:
         
         user_input = await self._build_user_input(context, use_thread, message)
         messages = self._build_messages(full_system_prompt, user_input, context, use_thread)
+        tools = self._get_tools()
         
         try:
-            response = await self._call_openai(messages)
-            text, reasoning = self._process_response(response)
+            # Agentic loop (max 10 iterations)
+            for _ in range(10):
+                response = await self._call_openai(messages, tools)
+                response_message = response.choices[0].message
+                
+                # Check for tool calls
+                if response_message.tool_calls:
+                    # Add assistant message with tool calls to history
+                    messages.append(response_message)
+                    
+                    # Execute tools
+                    for tool_call in response_message.tool_calls:
+                        tool_result = await self._execute_tool(tool_call)
+                        messages.append(tool_result)
+                    
+                    # Continue loop to get next response from model
+                    continue
+                
+                # No tool calls, process final response
+                text, reasoning = self._process_response(response)
+                
+                if save_history and text and not use_thread:
+                    self.history_repo.add_assistant_message(
+                        context.chat.id,
+                        context.user.id,
+                        text,
+                        reasoning_details=reasoning
+                    )
+                
+                return text, reasoning
+                
+            # If loop limit reached, return what we have or error
+            return DEFAULT_ERROR_MESSAGE, None
             
-            if save_history and text and not use_thread:
-                self.history_repo.add_assistant_message(
-                    context.chat.id,
-                    context.user.id,
-                    text,
-                    reasoning_details=reasoning
-                )
-            
-            return text, reasoning
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
             return DEFAULT_ERROR_MESSAGE, None
     
+    def _get_tools(self) -> List[dict]:
+        """Get available tools definition."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_player_info",
+                    "description": "Get player information from MineBridge API by nickname or Telegram ID. Use this when user asks about a player.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Player nickname or Telegram ID"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_server_status",
+                    "description": "Get Minecraft server status (online, players, version, etc). Use this when user asks about server status.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            }
+        ]
+    
+    async def _execute_tool(self, tool_call: Any) -> dict:
+        """Execute a tool call and return the result message."""
+        name = tool_call.function.name
+        try:
+            args = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError:
+            return {
+                "tool_call_id": tool_call.id,
+                "role": "tool",
+                "name": name,
+                "content": "Error: Invalid JSON arguments"
+            }
+        
+        logger.info(f"Executing tool: {name} with args: {args}")
+        content = "Error: Unknown tool"
+        
+        try:
+            if name == "get_player_info":
+                query = args.get("query")
+                data = await self.mb_api.search_player(query)
+                if data:
+                    content = json.dumps(data, ensure_ascii=False)
+                else:
+                    content = "Player not found"
+            elif name == "get_server_status":
+                data = await self.mc_api.fetch_status()
+                content = json.dumps(data, ensure_ascii=False)
+        except Exception as e:
+            logger.exception(f"Error executing tool {name}")
+            content = f"Error executing tool: {str(e)}"
+            
+        return {
+            "tool_call_id": tool_call.id,
+            "role": "tool",
+            "name": name,
+            "content": content
+        }
+
     async def generate_speech(self, text: str, voice: str = "ru-RU-DmitryNeural") -> Optional[bytes]:
         """Generate speech from text using Edge TTS.
         
@@ -170,14 +272,18 @@ class AIService:
         messages.append({"role": "user", "content": user_content})
         return messages
     
-    async def _call_openai(self, messages: List[dict]) -> dict:
+    async def _call_openai(self, messages: List[dict], tools: Optional[List[dict]] = None) -> dict:
         """Call OpenAI API."""
-        return await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=TEMPERATURE,
-            extra_body={"reasoning": {"enabled": True}}
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": TEMPERATURE,
+            "extra_body": {"reasoning": {"enabled": True}}
+        }
+        if tools:
+            kwargs["tools"] = tools
+            
+        return await self.client.chat.completions.create(**kwargs)
     
     def _process_response(self, response: dict) -> Tuple[str, Optional[dict]]:
         """Process OpenAI API response."""
@@ -359,4 +465,5 @@ class AIService:
             mt = f"image/{mt}" if "/" not in mt else mt
         b64 = base64.b64encode(image_bytes).decode("ascii")
         return f"data:{mt};base64,{b64}"
+
 

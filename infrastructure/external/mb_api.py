@@ -84,6 +84,49 @@ class MineBridgeAPI:
         if player_data is None:
             return None
         
+
+        
+        return await self._process_player_data(player_data, key, use_cache)
+
+    async def fetch_player_by_nickname(self, nickname: str, use_cache: bool = True) -> Optional[Dict[str, Any]]:
+        """Fetch player information by nickname."""
+        if not nickname:
+            return None
+        
+        key = f"mb:nick:{nickname.lower()}"
+        if use_cache:
+            player = self._get_cache(key)
+            if player is not None:
+                return player
+        
+        # Try to fetch using /api/player/{nickname} endpoint
+        # Note: This is an assumed endpoint based on standard REST patterns
+        # If it doesn't exist, we might need to rely on other methods or ask user for clarification
+        host = self._make_punycode_host(self.host)
+        nick_esc = quote_plus(nickname, safe="")
+        url = f"https://{host}/api/name/{nick_esc}"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url)
+                if r.status_code == 404:
+                    return None
+                r.raise_for_status()
+                player_data = r.json()
+                
+                # Process data similar to fetch_player_by_id
+                # Assuming the structure is similar or identical
+                return await self._process_player_data(player_data, key, use_cache)
+        except Exception:
+            # Fallback: try to see if the nickname is actually an ID (if it's numeric)
+            if nickname.isdigit():
+                return await self.fetch_player_by_id(nickname, use_cache)
+            
+            logger.warning("mb_api: failed to fetch player by nickname %s", nickname)
+            return None
+
+    async def _process_player_data(self, player_data: Dict[str, Any], cache_key: str, use_cache: bool) -> Optional[Dict[str, Any]]:
+        """Process raw player data and cache it."""
         URLS_START = {
             "vk": {"url": 'https://vk.com/', "label": 'ВК'},
             "twitch": {"url": 'https://www.twitch.tv/', "label": 'Твич'},
@@ -113,10 +156,27 @@ class MineBridgeAPI:
                     player[URLS_START[key]["label"]] = f"{URLS_START[key]['url']}{val}"
             
             if use_cache:
-                self._set_cache(key, player)
+                self._set_cache(cache_key, player)
             
             return player
         except Exception:
-            logger.exception("mb_api: unexpected error processing data for %s", player_id)
+            logger.exception("mb_api: unexpected error processing data")
             return None
+
+    async def search_player(self, query: str) -> Optional[Dict[str, Any]]:
+        """Search player by ID or nickname."""
+        if not query:
+            return None
+        
+        query = query.strip()
+        
+        # If query is numeric, try ID first
+        if query.isdigit():
+            player = await self.fetch_player_by_id(query)
+            if player:
+                return player
+        
+        # Try as nickname
+        return await self.fetch_player_by_nickname(query)
+
 

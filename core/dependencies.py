@@ -68,7 +68,9 @@ class Container:
             self.openai_client,
             self.history_repo,
             self.chat_logs_repo,
-            self.config.AI_MODEL
+            self.config.AI_MODEL,
+            self.mb_api,
+            self.mc_api
         )
         self.media_service = MediaService(
             self.bot,
