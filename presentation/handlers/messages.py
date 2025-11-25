@@ -195,7 +195,7 @@ def _should_answer(message: types.Message, bot_username: str) -> bool:
     if len(text) >= 25:
         score += 1
     
-    return score >= 3
+    return score >= 4
 
 
 def _save_incoming_message(chat_logs_repo: IChatLogsRepository, message: types.Message, text: str) -> None:
