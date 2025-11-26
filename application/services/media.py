@@ -483,7 +483,6 @@ class MediaService:
         if text is None:
             text = ""
         
-        logger.info(f"long_text processing: {text!r}")
         matches = list(MEDIA_TAG_RE.finditer(text))
         logger.info(f"Found {len(matches)} media tags")
         

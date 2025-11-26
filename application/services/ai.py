@@ -43,6 +43,7 @@ class AIService:
         model: str,
         mb_api: MineBridgeAPI,
         mc_api: MinecraftAPI,
+        news_api,
         config: Config
     ):
         self.client = openai_client
@@ -51,6 +52,7 @@ class AIService:
         self.model = model
         self.mb_api = mb_api
         self.mc_api = mc_api
+        self.news_api = news_api
         self.config = config
     
     async def complete(
@@ -158,6 +160,29 @@ class AIService:
                         "required": []
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_news",
+                    "description": "Get latest news from MineBridge news feed. Returns up to 5 news items.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of news items to fetch (max 5)",
+                                "default": 5
+                            },
+                            "offset": {
+                                "type": "integer",
+                                "description": "Offset for pagination",
+                                "default": 0
+                            }
+                        },
+                        "required": []
+                    }
+                }
             }
         ]
     
@@ -191,6 +216,14 @@ class AIService:
             elif name == "get_stickers":
                 stickers = list(self.config.STICKERS.keys())
                 content = f"Available stickers: {', '.join(stickers)}"
+            elif name == "get_news":
+                limit = min(args.get("limit", 5), 5)  # Enforce max 5
+                offset = args.get("offset", 0)
+                news_data = await self.news_api.fetch_news(limit, offset)
+                if news_data:
+                    content = json.dumps(news_data, ensure_ascii=False)
+                else:
+                    content = "Failed to fetch news"
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"
