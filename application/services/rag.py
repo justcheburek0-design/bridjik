@@ -7,6 +7,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 import httpx
 import re
+import os
 from datetime import datetime
 
 from core.config import Config
@@ -267,35 +268,47 @@ class RAGService:
         
         return [(self._rag_chunks[i], float(adj[i])) for i in selected_idx]
     
-    async def build_full_context(
+    async def build_structured_context(
         self,
         prompt: str,
         user_id: Optional[int] = None
-    ) -> str:
-        """Build dynamic context from RAG chunks."""
-        sections: List[str] = []
+    ) -> dict:
+        """Build structured context from RAG chunks as JSON object.
+        
+        Returns:
+            Dictionary with structured context data
+        """
+        context = {}
         
         # Get user psevdo if available
         from infrastructure.repositories.psevdos import PsevdoRepository
         psevdo_repo = PsevdoRepository(self.config.PSEVDO_FILE)
         psevdo = psevdo_repo.get_psevdo(user_id) if user_id else None
         if psevdo:
-            sections.append(f"Обращайся к игроку: '<b>{psevdo}</b>'\n")
+            context["user_info"] = {
+                "psevdo": psevdo,
+                "telegram_id": user_id
+            }
         
-        sections.append(f"Текущая дата: {datetime.now()}")
+        context["current_date"] = datetime.now().isoformat()
         
         # Knowledge base via semantic search
         results = await self.search(prompt)
         if results:
-            kb_parts: List[str] = []
-            for ch, _sc in results:
+            kb_chunks = []
+            for ch, score in results:
                 snippet = (ch.get("text") or "").strip()
                 if snippet:
-                    kb_parts.append(snippet)
-            if kb_parts:
-                sections.append("\n".join(kb_parts))
-
-        return "\n\n".join([s for s in sections if s])
+                    kb_chunks.append({
+                        "content": snippet,
+                        "source": os.path.basename(ch.get("file", "unknown")),
+                        "priority": ch.get("priority", 5),
+                        "relevance_score": round(float(score), 3)
+                    })
+            if kb_chunks:
+                context["knowledge_base"] = kb_chunks
+        
+        return context
     
     def get_chunks(self) -> List[dict]:
         """Get current RAG chunks."""

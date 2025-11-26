@@ -67,7 +67,7 @@ class Config:
     GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
     
     # Freeze options (hours)
-    FREEZE_OPTIONS: tuple = (1, 2, 3, 4)
+    FREEZE_OPTIONS: tuple = (1, 4, 12, 24)
     
     # Stickers
     STICKERS: Dict[str, str] = field(default_factory=lambda: {

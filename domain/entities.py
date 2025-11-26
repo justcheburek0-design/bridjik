@@ -60,7 +60,7 @@ class MessageContext:
         image_bytes: Optional[bytes] = None,
         mime_type: Optional[str] = None,
     ) -> "MessageContext":
-        """Create MessageContext with RAG context built automatically.
+        """Create MessageContext with structured RAG context (JSON format).
         
         Args:
             prompt: The user's message/prompt
@@ -72,13 +72,15 @@ class MessageContext:
             mime_type: MIME type of image
             
         Returns:
-            MessageContext with rag_context populated
+            MessageContext with rag_context as JSON string
         """
         rag_context = ""
         try:
-            rag_context = await rag_service.build_full_context(prompt, user.id)
+            import json
+            structured_context = await rag_service.build_structured_context(prompt, user.id)
+            rag_context = json.dumps(structured_context, ensure_ascii=False)
         except Exception:
-            logger.exception("RAG: failed to build context")
+            logger.exception("RAG: failed to build structured context")
         
         return cls(
             prompt=prompt,

@@ -324,7 +324,7 @@ class AIService:
         use_thread: bool,
         message: Optional[types.Message]
     ) -> str:
-        """Build user input with history or chat context.
+        """Build user input with JSON context.
         
         Args:
             context: Message context
@@ -332,106 +332,108 @@ class AIService:
             message: Telegram message
             
         Returns:
-            Formatted user input string
+            JSON string with structured context
         """
-        lines: List[str] = []
+        structured_data = {}
         
-        # Add RAG context if available
-        self._add_rag_context(lines, context)
-        
-        # Add history or chat logs
-        if use_thread and message:
-            self._add_group_chat_context(lines, context, message)
-        else:
-            # For private chats, history is added as separate messages in _build_messages
-            # We only add reply context here if present
-            if message and message.reply_to_message:
-                self._add_reply_message(lines, message, is_private=True)
-        
-        # Add current message (only if not already added as reply)
-        self._add_current_message(lines, context, message)
-        lines.append("Ответ:")
-        
-        return "\n".join(lines)
-    
-    def _add_rag_context(self, lines: List[str], context: MessageContext) -> None:
-        """Add RAG context to lines.
-        
-        Args:
-            lines: List to append to
-            context: Message context
-        """
+        # Parse RAG context if it's a JSON string (from structured context)
         if context.rag_context:
-            lines.append(context.rag_context)
-            lines.append("")
+            try:
+                # Try to parse as JSON first
+                import json
+                rag_data = json.loads(context.rag_context)
+                structured_data.update(rag_data)
+            except (json.JSONDecodeError, TypeError):
+                # Fallback: treat as plain text
+                structured_data["context_text"] = context.rag_context
+        
+        # Add chat context for groups (history is kept as separate messages)
+        if use_thread and message:
+            chat_context = self._build_group_chat_context(context, message)
+            if chat_context:
+                structured_data["chat_context"] = chat_context
+        else:
+            # For private chats, only add reply if present
+            if message and message.reply_to_message:
+                reply_context = self._build_reply_context(message, is_private=True)
+                if reply_context:
+                    structured_data["reply_to"] = reply_context
+        
+        # Add current message
+        display_name = context.user.get_display_name()
+        structured_data["current_message"] = {
+            "author": display_name,
+            "text": context.prompt
+        }
+        
+        import json
+        return json.dumps(structured_data, ensure_ascii=False, indent=2)
     
-    def _add_group_chat_context(
+
+    
+    def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
+        """Create data URL for image."""
+        mt = (mime_type or "image/jpeg").strip().lower()
+        if not mt.startswith("image/"):
+            mt = f"image/{mt}" if "/" not in mt else mt
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        return f"data:{mt};base64,{b64}"
+    
+    def _build_group_chat_context(
         self,
-        lines: List[str],
         context: MessageContext,
         message: types.Message
-    ) -> None:
-        """Add group chat context to lines.
+    ) -> dict:
+        """Build structured group chat context.
         
         Args:
-            lines: List to append to
             context: Message context
             message: Telegram message
+            
+        Returns:
+            Dictionary with chat context
         """
+        chat_context = {}
+        
         # Add reply message if present
         if message.reply_to_message:
-            self._add_reply_message(lines, message, is_private=False)
+            reply_data = self._build_reply_context(message, is_private=False)
+            if reply_data:
+                chat_context["reply_to"] = reply_data
         
         # Add recent messages
         recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 10)
         if recent:
-            lines.append("Контекст чата: последние сообщения:")
+            recent_messages = []
             for msg_data in recent:
                 message_id, author, is_bot, text = msg_data
-                lines.append(format_chat_log_entry(message_id, author, is_bot, text))
-            lines.append("Конец контекста")
-    
-    def _add_private_chat_context(
-        self,
-        lines: List[str],
-        context: MessageContext,
-        message: Optional[types.Message]
-    ) -> None:
-        """Add private chat context to lines.
+                recent_messages.append({
+                    "message_id": message_id,
+                    "author": author,
+                    "is_bot": is_bot,
+                    "text": text
+                })
+            chat_context["recent_messages"] = recent_messages
         
-        Args:
-            lines: List to append to
-            context: Message context
-            message: Telegram message
-        """
-        # Add conversation history
-        history = self.history_repo.get_history(context.chat.id, context.user.id)
-        if history:
-            lines.append("История: последние (до 5):")
-            for role, text in history:
-                lines.append(format_chat_history_entry(role, text))
-            lines.append("Конец истории")
-        
-        # Add reply message if present
-        if message and message.reply_to_message:
-            self._add_reply_message(lines, message, is_private=True)
+        return chat_context
     
-    def _add_reply_message(
+    def _build_reply_context(
         self,
-        lines: List[str],
         message: types.Message,
         is_private: bool
-    ) -> None:
-        """Add formatted reply message to lines.
+    ) -> Optional[dict]:
+        """Build structured reply context.
         
         Args:
-            lines: List to append to
             message: Telegram message
             is_private: Whether this is a private chat
+            
+        Returns:
+            Dictionary with reply context or None
         """
         if not message.reply_to_message:
-            return
-
+            return None
+        
         replied_msg = message.reply_to_message
         replied_msg_id = get_message_id(replied_msg)
         
@@ -453,40 +455,12 @@ class AIService:
                 _, _, log_text = log_msg
                 if log_text:
                     text = log_text
+        
+        return {
+            "message_id": replied_msg_id,
+            "author": author_name,
+            "text": text if text and text != "(пусто)" else None
+        }
 
-        # Format for AI
-        lines.append(f"[В ответ на сообщение от {author_name}]")
-        if text and text != "(пусто)":
-            lines.append(f"Текст сообщения: \"{text}\"")
-        else:
-            lines.append("Текст сообщения: (недоступен)")
-        lines.append("[/В ответ]")
-    
-    def _add_current_message(
-        self,
-        lines: List[str],
-        context: MessageContext,
-        message: Optional[types.Message]
-    ) -> None:
-        """Add current message to lines if not already added as reply.
-        
-        Args:
-            lines: List to append to
-            context: Message context
-            message: Telegram message
-        """
-        if message and message.reply_to_message:
-            return
-        
-        display_name = context.user.get_display_name()
-        lines.append(f"Пользователь ({display_name}): {context.prompt}")
-    
-    def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
-        """Create data URL for image."""
-        mt = (mime_type or "image/jpeg").strip().lower()
-        if not mt.startswith("image/"):
-            mt = f"image/{mt}" if "/" not in mt else mt
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        return f"data:{mt};base64,{b64}"
 
 
