@@ -10,6 +10,7 @@ from typing import Optional, Union
 from urllib.parse import urlparse, unquote
 from aiogram import types, Bot
 from aiogram.types import FSInputFile, BufferedInputFile
+from aiogram.exceptions import TelegramBadRequest
 import httpx
 from PIL import Image
 from io import BytesIO
@@ -517,38 +518,66 @@ class MediaService:
             if not s:
                 return
             parts = [s[i:i + CHUNK] for i in range(0, len(s), CHUNK)]
+            
+            async def safe_edit(text, reply_markup=None):
+                try:
+                    return await msg.edit_text(text, reply_markup=reply_markup)
+                except TelegramBadRequest as e:
+                    if "can't parse entities" in str(e):
+                        logger.warning("HTML parse error in edit, retrying with plain text")
+                        return await msg.edit_text(text, reply_markup=reply_markup, parse_mode=None)
+                    raise
+
+            async def safe_answer(text, reply_markup=None):
+                try:
+                    return await user_msg.answer(text, reply_markup=reply_markup)
+                except TelegramBadRequest as e:
+                    if "can't parse entities" in str(e):
+                        logger.warning("HTML parse error in answer, retrying with plain text")
+                        return await user_msg.answer(text, reply_markup=reply_markup, parse_mode=None)
+                    raise
+
             if first_edit:
                 try:
                     if pending_kb is not None:
-                        last_text_msg = await msg.edit_text(parts[0], reply_markup=pending_kb)
+                        last_text_msg = await safe_edit(parts[0], reply_markup=pending_kb)
                         pending_kb = None
                     else:
-                        last_text_msg = await msg.edit_text(parts[0])
+                        last_text_msg = await safe_edit(parts[0])
                     
                     if last_text_msg:
                         sent_messages.append((last_text_msg.message_id, parts[0]))
                 except Exception:
                     logger.exception("failed to edit initial message with text")
-                    last_text_msg = await user_msg.answer(parts[0])
-                    if pending_kb is not None:
-                        try:
-                            await last_text_msg.edit_reply_markup(reply_markup=pending_kb)
-                        except Exception:
-                            logger.exception("failed to set pending keyboard on fallback message")
-                        pending_kb = None
-                    
-                    if last_text_msg:
-                        sent_messages.append((last_text_msg.message_id, parts[0]))
+                    try:
+                        last_text_msg = await safe_answer(parts[0])
+                        if pending_kb is not None:
+                            try:
+                                await last_text_msg.edit_reply_markup(reply_markup=pending_kb)
+                            except Exception:
+                                logger.exception("failed to set pending keyboard on fallback message")
+                            pending_kb = None
+                        
+                        if last_text_msg:
+                            sent_messages.append((last_text_msg.message_id, parts[0]))
+                    except Exception:
+                        logger.exception("failed to send fallback message")
                 
                 for part in parts[1:]:
-                    last_text_msg = await user_msg.answer(part)
-                    if last_text_msg:
-                        sent_messages.append((last_text_msg.message_id, part))
+                    try:
+                        last_text_msg = await safe_answer(part)
+                        if last_text_msg:
+                            sent_messages.append((last_text_msg.message_id, part))
+                    except Exception:
+                        logger.exception("failed to send message part")
             else:
                 for part in parts:
-                    last_text_msg = await user_msg.answer(part)
-                    if last_text_msg:
-                        sent_messages.append((last_text_msg.message_id, part))
+                    try:
+                        last_text_msg = await safe_answer(part)
+                        if last_text_msg:
+                            sent_messages.append((last_text_msg.message_id, part))
+                    except Exception:
+                        logger.exception("failed to send message part")
         
         first_text_pending = True
         for kind, payload in actions:

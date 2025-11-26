@@ -295,8 +295,6 @@ class RAGService:
             if kb_parts:
                 sections.append("\n".join(kb_parts))
 
-        print("\n\n".join([s for s in sections if s]))
-        
         return "\n\n".join([s for s in sections if s])
     
     def get_chunks(self) -> List[dict]:
