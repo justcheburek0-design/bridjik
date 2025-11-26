@@ -318,12 +318,21 @@ async def auto_reply(
         # This ensures the current message is included in chat context
         _save_incoming_message(chat_logs_repo, message, prompt)
         
+        # Define status update callback
+        async def update_status(text: str):
+            try:
+                if msg:
+                    await msg.edit_text(text)
+            except Exception:
+                pass
+
         # Get AI response
         answer, reasoning = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
             message=message,
-            save_history=False  # We handle history saving here to ensure correct order
+            save_history=False,  # We handle history saving here to ensure correct order
+            on_tool_update=update_status
         )
         
         if not answer:

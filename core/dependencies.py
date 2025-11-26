@@ -70,7 +70,8 @@ class Container:
             self.chat_logs_repo,
             self.config.AI_MODEL,
             self.mb_api,
-            self.mc_api
+            self.mc_api,
+            self.config
         )
         self.media_service = MediaService(
             self.bot,

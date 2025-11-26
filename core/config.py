@@ -56,7 +56,7 @@ class Config:
     # RAG settings
     RAG_CHUNK_SIZE: int = 900
     RAG_CHUNK_OVERLAP: int = 150
-    RAG_MIN_CHUNKS: int = 3  # Minimum number of chunks to return
+    RAG_MIN_CHUNKS: int = 1  # Minimum number of chunks to return
     RAG_MAX_CHUNKS: int = 12  # Maximum number of chunks to return
     RAG_SIMILARITY_THRESHOLD: float = 0.6  # Minimum relative score (0.0-1.0) compared to top chunk
     RAG_EMB_MODEL: str = "jina-embeddings-v3"

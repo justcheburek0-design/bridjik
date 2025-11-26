@@ -272,12 +272,8 @@ class RAGService:
         prompt: str,
         user_id: Optional[int] = None
     ) -> str:
-        """Build dynamic context from server status, player data, and RAG chunks."""
+        """Build dynamic context from RAG chunks."""
         sections: List[str] = []
-        
-        status_task = asyncio.create_task(self.mc_api.fetch_status())
-        search_task = asyncio.create_task(self.search(prompt))
-        player_task = asyncio.create_task(self.mb_api.fetch_player_by_id(str(user_id))) if user_id else None
         
         # Get user psevdo if available
         from infrastructure.repositories.psevdos import PsevdoRepository
@@ -286,28 +282,10 @@ class RAGService:
         if psevdo:
             sections.append(f"Обращайся к игроку: '<b>{psevdo}</b>'\n")
         
-        # Dynamic server context
-        try:
-            payload = await status_task
-            server_ctx = self.mc_api.format_status_text(payload)
-            if server_ctx:
-                sections.append(f"Пиши про статус, только когда просят\n{server_ctx}\n")
-        except Exception:
-            logger.exception("RAG: failed to fetch server status")
-        
-        # Dynamic player context
-        if user_id and player_task:
-            try:
-                player_info = await player_task
-                if player_info:
-                    sections.append(f"Игрок (из MineBridge API):\nИспользуй данные аккаунта, только когда просят\n{json.dumps(player_info, ensure_ascii=False)}\n")
-            except Exception:
-                logger.exception("RAG: failed to fetch player info")
-        
         sections.append(f"Текущая дата: {datetime.now()}")
         
         # Knowledge base via semantic search
-        results = await search_task
+        results = await self.search(prompt)
         if results:
             kb_parts: List[str] = []
             for ch, _sc in results:
@@ -316,6 +294,8 @@ class RAGService:
                     kb_parts.append(snippet)
             if kb_parts:
                 sections.append("\n".join(kb_parts))
+
+        print("\n\n".join([s for s in sections if s]))
         
         return "\n\n".join([s for s in sections if s])
     

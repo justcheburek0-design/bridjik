@@ -2,9 +2,12 @@
 import logging
 import base64
 import json
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List, Tuple, Any, Callable, Awaitable
+from typing import Optional, List, Tuple, Any, Callable, Awaitable
 from openai import AsyncOpenAI, RateLimitError, APIError
 from aiogram import types
+
+from core.config import Config
 
 from domain.entities import MessageContext
 from domain.interfaces import IHistoryRepository, IChatLogsRepository
@@ -25,11 +28,6 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Constants
-HTML_FORMATTING_INSTRUCTION = (
-    "\n\nВажно: Используй HTML-разметку для форматирования ответа "
-    "(<b>, <i>, <code>, <s>, <u>, <pre>). MarkDown НЕЛЬЗЯ! "
-    "Все ссылки вставляй сразу в текст <a href=\"\"></a>"
-)
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
 TEMPERATURE = 1.0
 
@@ -44,7 +42,8 @@ class AIService:
         chat_logs_repo: IChatLogsRepository,
         model: str,
         mb_api: MineBridgeAPI,
-        mc_api: MinecraftAPI
+        mc_api: MinecraftAPI,
+        config: Config
     ):
         self.client = openai_client
         self.history_repo = history_repo
@@ -52,13 +51,15 @@ class AIService:
         self.model = model
         self.mb_api = mb_api
         self.mc_api = mc_api
+        self.config = config
     
     async def complete(
         self,
         context: MessageContext,
         system_prompt: str,
         message: Optional[types.Message] = None,
-        save_history: bool = True
+        save_history: bool = True,
+        on_tool_update: Optional[Callable[[str], Awaitable[None]]] = None
     ) -> Tuple[str, Optional[dict]]:
         """Generate AI completion for given context."""
         use_thread = self._is_group_chat(message)
@@ -78,6 +79,13 @@ class AIService:
                 if response_message.tool_calls:
                     # Add assistant message with tool calls to history
                     messages.append(response_message)
+                    
+                    # Update status if AI provided content
+                    if response_message.content and on_tool_update:
+                        try:
+                            await on_tool_update(response_message.content)
+                        except Exception:
+                            logger.warning("Failed to update tool status", exc_info=True)
                     
                     # Execute tools
                     for tool_call in response_message.tool_calls:
@@ -114,7 +122,7 @@ class AIService:
                 "type": "function",
                 "function": {
                     "name": "get_player_info",
-                    "description": "Get player information from MineBridge API by nickname or Telegram ID. Use this when user asks about a player.",
+                    "description": "Get player information from MineBridge API by nickname or Telegram ID",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -131,7 +139,19 @@ class AIService:
                 "type": "function",
                 "function": {
                     "name": "get_server_status",
-                    "description": "Get Minecraft server status (online, players, version, etc). Use this when user asks about server status.",
+                    "description": "Get Minecraft server status (online, players, version, etc)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_stickers",
+                    "description": "Get list of available stickers. Use this when you need to see what stickers are available to send one. [[sticker:name]]",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -168,6 +188,9 @@ class AIService:
             elif name == "get_server_status":
                 data = await self.mc_api.fetch_status()
                 content = json.dumps(data, ensure_ascii=False)
+            elif name == "get_stickers":
+                stickers = list(self.config.STICKERS.keys())
+                content = f"Available stickers: {', '.join(stickers)}"
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"
