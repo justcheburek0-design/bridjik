@@ -59,3 +59,26 @@ class StickersRepository:
     def get_all_stickers(self) -> Dict[str, str]:
         """Get all stickers."""
         return self._stickers.copy()
+
+    def get_stickers_file_path(self) -> Path:
+        """Get the path to the stickers file."""
+        return self.stickers_file
+
+    def restore_from_json(self, json_content: str) -> bool:
+        """Restore stickers from JSON content. Returns True if successful."""
+        try:
+            new_stickers = json.loads(json_content)
+            if not isinstance(new_stickers, dict):
+                return False
+            
+            # Validate that values are strings (file_ids)
+            for k, v in new_stickers.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    return False
+            
+            self._stickers = new_stickers
+            self._save_stickers()
+            return True
+        except Exception:
+            logger.exception("Failed to restore stickers from JSON")
+            return False

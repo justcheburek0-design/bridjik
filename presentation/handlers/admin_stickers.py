@@ -1,6 +1,7 @@
 """Admin handlers for sticker management."""
 import logging
-from aiogram import Router, types, F
+from aiogram import Router, types, F, Bot
+from aiogram.types import FSInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -17,6 +18,7 @@ router = Router()
 class StickerStates(StatesGroup):
     waiting_for_name = State()
     waiting_for_sticker = State()
+    waiting_for_restore_file = State()
 
 
 @router.message(Command("stickers"))
@@ -41,7 +43,9 @@ async def list_stickers(message: types.Message, config: Config, stickers_repo: S
         [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
         [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
         [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
-        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")]
+        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
+        [types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
+         types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
     ])
     
     await message.answer("Управление стикерами:", reply_markup=kb)
@@ -78,7 +82,9 @@ async def back_to_menu(callback: types.CallbackQuery):
         [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
         [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
         [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
-        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")]
+        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
+        [types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
+         types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
     ])
     await callback.message.edit_text("Управление стикерами:", reply_markup=kb)
 
@@ -187,3 +193,55 @@ async def process_edit_file(message: types.Message, state: FSMContext, stickers_
     stickers_repo.add_sticker(name, file_id)
     await message.answer(f"✅ Стикер <code>{name}</code> обновлен!")
     await state.clear()
+
+
+@router.callback_query(F.data == "sticker_backup")
+async def backup_stickers(callback: types.CallbackQuery, stickers_repo: StickersRepository):
+    file_path = stickers_repo.get_stickers_file_path()
+    if not file_path.exists():
+        await callback.answer("Файл стикеров не найден.", show_alert=True)
+        return
+
+    await callback.message.answer_document(
+        FSInputFile(file_path),
+        caption="💾 Бэкап стикеров"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "sticker_restore")
+async def start_restore_stickers(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(StickerStates.waiting_for_restore_file)
+    await callback.message.answer(
+        "⚠️ <b>Внимание!</b> Восстановление перезапишет текущий список стикеров.\n"
+        "Отправьте файл <code>stickers.json</code> для восстановления:",
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="sticker_menu")]
+        ])
+    )
+    await callback.answer()
+
+
+@router.message(StickerStates.waiting_for_restore_file, F.document)
+async def process_restore_file(message: types.Message, state: FSMContext, stickers_repo: StickersRepository, bot: Bot):
+    if not message.document.file_name.endswith('.json'):
+        await message.answer("❌ Пожалуйста, отправьте файл с расширением .json")
+        return
+
+    try:
+        file = await bot.get_file(message.document.file_id)
+        file_content = await bot.download_file(file.file_path)
+        json_content = file_content.read().decode('utf-8')
+        
+        if stickers_repo.restore_from_json(json_content):
+            await message.answer("✅ Список стикеров успешно восстановлен!")
+        else:
+            await message.answer("❌ Ошибка при восстановлении. Проверьте формат файла.")
+            
+    except Exception as e:
+        logger.error(f"Error restoring stickers: {e}")
+        await message.answer("❌ Произошла ошибка при обработке файла.")
+    
+    await state.clear()
+
