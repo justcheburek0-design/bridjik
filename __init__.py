@@ -1,3 +1,3 @@
 """MineBridge Telegram Bot - refactored version."""
 
-__version__ = "26.11b"
+__version__ = "27.11a"

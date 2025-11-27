@@ -44,6 +44,7 @@ class AIService:
         mb_api: MineBridgeAPI,
         mc_api: MinecraftAPI,
         news_api,
+        tavily_api,
         config: Config
     ):
         self.client = openai_client
@@ -53,6 +54,7 @@ class AIService:
         self.mb_api = mb_api
         self.mc_api = mc_api
         self.news_api = news_api
+        self.tavily_api = tavily_api
         self.config = config
     
     async def complete(
@@ -224,6 +226,28 @@ class AIService:
                         "required": []
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search the web for current information, news, or any topic. Use this when you need up-to-date information or facts not in your knowledge base.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Search query"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum number of results to return (default: 5, max: 10)",
+                                "default": 5
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
             }
         ]
     
@@ -280,6 +304,14 @@ class AIService:
                     content = json.dumps(top_players_data, ensure_ascii=False)
                 else:
                     content = "Failed to fetch top players"
+            elif name == "web_search":
+                query = args.get("query")
+                max_results = min(args.get("max_results", 5), 10)  # Enforce max 10
+                search_data = await self.tavily_api.search(query, max_results=max_results)
+                if search_data:
+                    content = self.tavily_api.format_results(search_data)
+                else:
+                    content = "Failed to perform web search"
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"

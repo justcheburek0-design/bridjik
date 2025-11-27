@@ -29,6 +29,7 @@ class Config:
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     JINA_API_KEY: str = field(default_factory=lambda: os.getenv("JINA_API_KEY", ""))
     PIXABAY_API_KEY: str = field(default_factory=lambda: os.getenv("PIXABAY_API_KEY", ""))
+    TAVILY_API_KEY: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
     
     # MineBridge API
     MB_HOST: str = "майнбридж.рф"

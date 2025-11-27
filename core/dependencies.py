@@ -13,6 +13,7 @@ from infrastructure.external.mc_api import MinecraftAPI
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.gemini import GeminiAPI
 from infrastructure.external.news_api import NewsAPI
+from infrastructure.external.tavily_api import TavilyAPI
 from application.services.subscription import SubscriptionService
 from application.services.user import UserService
 from application.services.game import GameService
@@ -58,6 +59,7 @@ class Container:
         self.mb_api = MineBridgeAPI(self.config.MB_HOST)
         self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.GEMINI_MODEL)
         self.news_api = NewsAPI()
+        self.tavily_api = TavilyAPI(self.config.TAVILY_API_KEY)
         
         # Services
         self.subscription_service = SubscriptionService(
@@ -74,6 +76,7 @@ class Container:
             self.mb_api,
             self.mc_api,
             self.news_api,
+            self.tavily_api,
             self.config
         )
         self.media_service = MediaService(
@@ -113,6 +116,7 @@ class Container:
             "mb_api": self.mb_api,
             "gemini_api": self.gemini_api,
             "news_api": self.news_api,
+            "tavily_api": self.tavily_api,
             "keyboard_builder": self.keyboard_builder,
             "formatter": self.formatter,
             "freezes_repo": self.freezes_repo,
