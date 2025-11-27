@@ -78,21 +78,14 @@ def get_message_text(message: types.Message) -> str:
 def get_reply_quote(message: types.Message) -> Optional[str]:
     """Extract quote text from reply message if available.
     
-    Returns quote text if message.reply_to_message has a quote,
+    Returns quote text if message has a quote,
     otherwise returns None.
     """
-    if not message.reply_to_message:
-        return None
-    
-    # Check for quote in reply_to_message
-    quote = getattr(message.reply_to_message, "quote", None)
+    # Check for quote in the message itself (Telegram Bot API 7.0+)
+    quote = getattr(message, "quote", None)
     if quote:
         quote_text = getattr(quote, "text", None)
         if quote_text:
-            # Limit quote length for readability (max 50 chars)
-            quote_text = quote_text.strip()
-            if len(quote_text) > 50:
-                quote_text = quote_text[:47] + "..."
-            return quote_text
-    
+            return quote_text.strip()
+            
     return None

@@ -17,6 +17,7 @@ from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
 from utils.chat_helpers import is_group_chat, get_author_name, get_message_id, is_bot_message, get_replied_message_id
 from utils.message_formatter import combine_text_and_media, build_message_text_for_save
+from utils.message import get_reply_quote
 from utils.error_handlers import safe_execute_async
 
 
@@ -217,11 +218,28 @@ def _save_incoming_message(chat_logs_repo: IChatLogsRepository, message: types.M
         return
     
     # Add reply information to log if this is a reply
-    # if message.reply_to_message:
-    #     replied_msg_id = get_replied_message_id(message)
-    #     if replied_msg_id:
-    #         reply_info = f"[Ответ на сообщение {replied_msg_id}] "
-    #         final_text = reply_info + final_text
+    if message.reply_to_message:
+        replied_msg = message.reply_to_message
+        replied_id = get_message_id(replied_msg)
+        
+        # Check for specific quote
+        quote = get_reply_quote(message)
+        if quote:
+            reply_info = f"[Ответ на цитату из {replied_id}: \"{quote}\"] "
+            final_text = reply_info + final_text
+        else:
+            # Get text of replied message
+            replied_text = (getattr(replied_msg, "text", None) or getattr(replied_msg, "caption", None) or "").strip()
+            # Truncate if too long
+            if len(replied_text) > 50:
+                replied_text = replied_text[:47] + "..."
+            
+            if replied_text:
+                reply_info = f"[Ответ на {replied_id}: \"{replied_text}\"] "
+                final_text = reply_info + final_text
+            else:
+                reply_info = f"[Ответ на {replied_id}] "
+                final_text = reply_info + final_text
     
     chat_logs_repo.add_message(chat_id, author, is_bot, final_text, message_id)
 

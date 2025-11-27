@@ -577,10 +577,14 @@ class AIService:
                 if log_text:
                     text = log_text
         
+        # Get quote if present
+        quote = get_reply_quote(message)
+        
         return {
             "message_id": replied_msg_id,
             "author": author_name,
-            "text": text if text and text != "(пусто)" else None
+            "text": text if text and text != "(пусто)" else None,
+            "quote": quote
         }
 
 
