@@ -153,7 +153,7 @@ class AIService:
                 "type": "function",
                 "function": {
                     "name": "get_stickers",
-                    "description": "Get list of available stickers. Use this when you need to see what stickers are available to send one. [[sticker:name]]",
+                    "description": "Get list of available stickers. Use sticker: [[sticker:name]]",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -165,13 +165,54 @@ class AIService:
                 "type": "function",
                 "function": {
                     "name": "get_news",
-                    "description": "Get latest news from MineBridge news feed. Returns up to 5 news items.",
+                    "description": "Get latest news from MineBridge news feed",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "limit": {
                                 "type": "integer",
                                 "description": "Number of news items to fetch (max 5)",
+                                "default": 5
+                            },
+                            "offset": {
+                                "type": "integer",
+                                "description": "Offset for pagination",
+                                "default": 0
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_events",
+                    "description": "Get events for a specific season",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "season": {
+                                "type": "integer",
+                                "description": "Season number (-1 for latest season, 1 for first season)",
+                                "default": -1
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_top_players",
+                    "description": "Get top players from MineBridge",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of players to fetch (max 5)",
                                 "default": 5
                             },
                             "offset": {
@@ -224,6 +265,21 @@ class AIService:
                     content = json.dumps(news_data, ensure_ascii=False)
                 else:
                     content = "Failed to fetch news"
+            elif name == "get_events":
+                season = args.get("season", -1)
+                events_data = await self.mb_api.fetch_events(season)
+                if events_data:
+                    content = json.dumps(events_data, ensure_ascii=False)
+                else:
+                    content = "Failed to fetch events"
+            elif name == "get_top_players":
+                limit = min(args.get("limit", 5), 5)  # Enforce max 5
+                offset = args.get("offset", 0)
+                top_players_data = await self.mb_api.fetch_top_players(limit, offset)
+                if top_players_data:
+                    content = json.dumps(top_players_data, ensure_ascii=False)
+                else:
+                    content = "Failed to fetch top players"
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"

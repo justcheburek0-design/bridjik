@@ -178,5 +178,48 @@ class MineBridgeAPI:
         
         # Try as nickname
         return await self.fetch_player_by_nickname(query)
+    
+    async def fetch_events(self, season: int = -1) -> Optional[Dict[str, Any]]:
+        """Fetch events for a specific season.
+        
+        Args:
+            season: Season number (-1 for latest season, 1 for first season)
+        
+        Returns:
+            Events data or None on error
+        """
+        host = self._make_punycode_host(self.host)
+        url = f"https://{host}/api/events?season={season}"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            logger.exception("mb_api: failed to fetch events for season %s", season)
+            return None
+    
+    async def fetch_top_players(self, limit: int = 5, offset: int = 0) -> Optional[Dict[str, Any]]:
+        """Fetch top players with pagination.
+        
+        Args:
+            limit: Number of players to fetch
+            offset: Offset for pagination
+        
+        Returns:
+            Top players data or None on error
+        """
+        host = self._make_punycode_host(self.host)
+        url = f"https://{host}/api/users?limit={limit}&offset={offset}"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            logger.exception("mb_api: failed to fetch top players (limit=%s, offset=%s)", limit, offset)
+            return None
 
 
