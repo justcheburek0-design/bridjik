@@ -8,7 +8,7 @@ import numpy as np
 import httpx
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from core.config import Config
 from infrastructure.external.mc_api import MinecraftAPI
@@ -290,7 +290,8 @@ class RAGService:
                 "telegram_id": user_id
             }
         
-        context["current_date"] = datetime.now().isoformat()
+        moscow_tz = timezone(timedelta(hours=3))
+        context["current_date"] = datetime.now(tz=moscow_tz).isoformat()
         
         # Knowledge base via semantic search
         results = await self.search(prompt)
