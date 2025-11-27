@@ -34,7 +34,8 @@ async def list_stickers(message: types.Message, config: Config, stickers_repo: S
         await message.answer(
             "Список стикеров пуст.",
             reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="➕ Добавить стикер", callback_data="add_sticker")]
+                [types.InlineKeyboardButton(text="➕ Добавить стикер", callback_data="add_sticker")],
+                [types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
             ])
         )
         return
