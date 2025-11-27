@@ -45,7 +45,8 @@ class AIService:
         mc_api: MinecraftAPI,
         news_api,
         tavily_api,
-        config: Config
+        config: Config,
+        stickers_repo
     ):
         self.client = openai_client
         self.history_repo = history_repo
@@ -56,6 +57,7 @@ class AIService:
         self.news_api = news_api
         self.tavily_api = tavily_api
         self.config = config
+        self.stickers_repo = stickers_repo
     
     async def complete(
         self,
@@ -155,7 +157,7 @@ class AIService:
                 "type": "function",
                 "function": {
                     "name": "get_stickers",
-                    "description": "Get list of available stickers. Use sticker: [[sticker:name]]",
+                    "description": "Get list of available stickers. You can sometimes use sticker: [[sticker:name]]",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -279,7 +281,7 @@ class AIService:
                 data = await self.mc_api.fetch_status()
                 content = json.dumps(data, ensure_ascii=False)
             elif name == "get_stickers":
-                stickers = list(self.config.STICKERS.keys())
+                stickers = list(self.stickers_repo.get_all_stickers().keys())
                 content = f"Available stickers: {', '.join(stickers)}"
             elif name == "get_news":
                 limit = min(args.get("limit", 5), 5)  # Enforce max 5

@@ -80,7 +80,8 @@ class Container:
             self.mc_api,
             self.news_api,
             self.tavily_api,
-            self.config
+            self.config,
+            self.stickers_repo
         )
         self.media_service = MediaService(
             self.bot,
