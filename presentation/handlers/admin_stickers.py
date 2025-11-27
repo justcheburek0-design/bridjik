@@ -49,7 +49,7 @@ async def list_stickers(message: types.Message, config: Config, stickers_repo: S
          types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
     ])
     
-    await message.answer("Управление стикерами:", reply_markup=kb)
+    await message.answer("<b>Управление стикерами</b>", reply_markup=kb)
 
 
 @router.callback_query(F.data == "sticker_list")
@@ -59,7 +59,7 @@ async def show_sticker_list(callback: types.CallbackQuery, stickers_repo: Sticke
         await callback.message.edit_text("Список стикеров пуст.", reply_markup=callback.message.reply_markup)
         return
 
-    text = "📋 **Список стикеров:**\n\n"
+    text = "📋 <b>Список стикеров</b>\n\n"
     # Sort by name
     for name in sorted(stickers.keys()):
         text += f"• <code>{name}</code>\n"
@@ -87,13 +87,13 @@ async def back_to_menu(callback: types.CallbackQuery):
         [types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
          types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
     ])
-    await callback.message.edit_text("Управление стикерами:", reply_markup=kb)
+    await callback.message.edit_text("<b>Управление стикерами</b>", reply_markup=kb)
 
 
 @router.callback_query(F.data == "sticker_add")
 async def start_add_sticker(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(StickerStates.waiting_for_name)
-    await callback.message.answer("Введите название для нового стикера:")
+    await callback.message.answer("Введите название для нового стикера")
     await callback.answer()
 
 
@@ -106,7 +106,7 @@ async def process_sticker_name(message: types.Message, state: FSMContext):
     
     await state.update_data(name=name)
     await state.set_state(StickerStates.waiting_for_sticker)
-    await message.answer(f"Отправьте стикер для названия <code>{name}</code>:")
+    await message.answer(f"Отправьте стикер для названия <code>{name}</code>")
 
 
 @router.message(StickerStates.waiting_for_sticker, F.sticker)
@@ -146,7 +146,7 @@ class StickerDeleteStates(StatesGroup):
 @router.callback_query(F.data == "sticker_delete_menu")
 async def start_delete_sticker(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(StickerDeleteStates.waiting_for_name)
-    await callback.message.answer("Введите название стикера, который нужно удалить:")
+    await callback.message.answer("Введите название стикера, который нужно удалить")
     await callback.answer()
 
 
@@ -168,7 +168,7 @@ class StickerEditStates(StatesGroup):
 @router.callback_query(F.data == "sticker_edit_menu")
 async def start_edit_sticker(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(StickerEditStates.waiting_for_name)
-    await callback.message.answer("Введите название стикера, который нужно изменить:")
+    await callback.message.answer("Введите название стикера, который нужно изменить")
     await callback.answer()
 
 
@@ -182,7 +182,7 @@ async def process_edit_name(message: types.Message, state: FSMContext, stickers_
     
     await state.update_data(name=name)
     await state.set_state(StickerEditStates.waiting_for_new_sticker)
-    await message.answer(f"Отправьте новый стикер для <code>{name}</code>:")
+    await message.answer(f"Отправьте новый стикер для <code>{name}</code>")
 
 
 @router.message(StickerEditStates.waiting_for_new_sticker, F.sticker)
