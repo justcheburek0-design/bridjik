@@ -387,24 +387,85 @@ class AIService:
     ) -> List[dict]:
         """Build messages list for OpenAI API.
         
+        Creates a list of messages in OpenAI format:
+        [
+            {"role": "system", "content": "..."},
+            {"role": "user", "content": "..."},
+            {"role": "assistant", "content": "..."},
+            ...
+        ]
+        
         Args:
             system_prompt: System prompt text
-            user_input: User input text
+            user_input: User input JSON string with context
             context: Message context
+            use_thread: Whether to use thread (group chat)
             
         Returns:
-            List of message dictionaries
+            List of message dictionaries in OpenAI format
         """
-        messages = [{"role": "system", "content": system_prompt}]
+        import json
+        
+        # Parse user_input JSON to extract context
+        try:
+            input_data = json.loads(user_input)
+        except json.JSONDecodeError:
+            input_data = {"current_message": {"text": user_input}}
+        
+        # Build system message with RAG context
+        system_content = system_prompt
+        if "current_date" in input_data:
+            system_content += f"\n\nТекущая дата: {input_data['current_date']}"
+        if "knowledge_base" in input_data:
+            kb_text = "\n\n# База знаний:\n"
+            for item in input_data["knowledge_base"]:
+                kb_text += f"\n{item['content']}\n"
+            system_content += kb_text
+        
+        messages = [{"role": "system", "content": system_content}]
         
         # Add history for private chats
         if not use_thread:
             history = self.history_repo.get_history(context.chat.id, context.user.id)
             messages.extend(history)
+        else:
+            # For group chats, convert recent_messages to proper message format
+            chat_context = input_data.get("chat_context", {})
+            recent_messages = chat_context.get("recent_messages", [])
+            
+            for msg in recent_messages:
+                author = msg.get("author", "Unknown")
+                is_bot = msg.get("is_bot", False)
+                text = msg.get("text", "")
+                
+                if not text:
+                    continue
+                elif text.startswith("🔄 Бот перезагружен"):
+                    is_bot = True
+                
+                role = "assistant" if is_bot else "user"
+                content = text if is_bot else f"{author}: {text}"
+                
+                messages.append({"role": role, "content": content})
         
+        # Build current message content
+        current_msg = input_data.get("current_message", {})
+        current_text = current_msg.get("text", context.prompt)
+        
+        # Add reply context if present
+        if use_thread:
+            chat_context = input_data.get("chat_context", {})
+            reply_to = chat_context.get("reply_to")
+            if reply_to:
+                reply_author = reply_to.get("author", "Unknown")
+                reply_text = reply_to.get("text", "")
+                if reply_text:
+                    current_text = f"[Ответ на сообщение от {reply_author}: \"{reply_text[:50]}...\"]\n{current_text}"
+        
+        # Handle images
         if context.has_image and context.image_bytes:
             user_content = [
-                {"type": "text", "text": user_input},
+                {"type": "text", "text": current_text},
                 {
                     "type": "image_url",
                     "image_url": {
@@ -413,9 +474,13 @@ class AIService:
                 },
             ]
         else:
-            user_content = user_input
-        
+            user_content = current_text
+
         messages.append({"role": "user", "content": user_content})
+        
+        # Log message structure for debugging
+        logger.info(f"Built {len(messages)} messages: {[m['role'] for m in messages]}")
+        
         return messages
     
     async def _call_openai(self, messages: List[dict], tools: Optional[List[dict]] = None) -> dict:

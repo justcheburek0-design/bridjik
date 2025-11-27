@@ -10,7 +10,16 @@ from utils.text import shorten
 
 
 class HistoryRepository(IHistoryRepository):
-    """JSON-based conversation history repository."""
+    """JSON-based conversation history repository.
+    
+    Stores conversation history in OpenAI-compatible message format:
+    [
+        {"role": "system", "content": "Ты Бриджик!"},
+        {"role": "user", "content": "Привет"},
+        {"role": "assistant", "content": "Здорова!"},
+        {"role": "user", "content": "Расскажи о MineBridge"}
+    ]
+    """
     
     def __init__(self, file_path: Path, max_messages: int = 5):
         self.file_path = file_path
@@ -47,12 +56,8 @@ class HistoryRepository(IHistoryRepository):
                 dq: Deque[dict] = deque(maxlen=self.max_messages)
                 for row in items:
                     try:
-                        if isinstance(row, list) and len(row) >= 2:
-                            # Old format: [role, text]
-                            role, msg = row[0], row[1]
-                            dq.append({"role": str(role), "content": shorten(str(msg))})
-                        elif isinstance(row, dict):
-                            # New format: dict
+                        if isinstance(row, dict) and "role" in row and "content" in row:
+                            # Standard OpenAI message format
                             dq.append(row)
                     except Exception:
                         continue
@@ -76,13 +81,13 @@ class HistoryRepository(IHistoryRepository):
             logging.exception("Failed to save history to JSON")
     
     def add_user_message(self, chat_id: int, user_id: int, text: str) -> None:
-        """Add user message to history."""
+        """Add user message to history in OpenAI format: {"role": "user", "content": "..."}"""
         key = self._make_key(chat_id, user_id)
         self._history[key].append({"role": "user", "content": shorten(text)})
         self._save()
     
     def add_assistant_message(self, chat_id: int, user_id: int, text: str, reasoning_details: Optional[dict] = None) -> None:
-        """Add assistant message to history."""
+        """Add assistant message to history in OpenAI format: {"role": "assistant", "content": "..."}"""
         key = self._make_key(chat_id, user_id)
         msg = {"role": "assistant", "content": shorten(text)}
         if reasoning_details:
@@ -91,7 +96,7 @@ class HistoryRepository(IHistoryRepository):
         self._save()
     
     def get_history(self, chat_id: int, user_id: int) -> List[dict]:
-        """Get conversation history."""
+        """Get conversation history as a list of OpenAI-compatible message dicts."""
         key = self._make_key(chat_id, user_id)
         return list(self._history.get(key, deque()))
 
