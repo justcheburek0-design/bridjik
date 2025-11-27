@@ -17,6 +17,7 @@ from io import BytesIO
 
 from core.config import Config
 from domain.interfaces import IGuessesRepository
+from infrastructure.repositories.stickers import StickersRepository
 
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,11 @@ _PIXABAY_LANG = "ru"
 class MediaService:
     """Service for handling media (images, voice, etc.)."""
     
-    def __init__(self, bot: Bot, bot_token: str, config: Config, guesses_repo: Optional[IGuessesRepository] = None):
+    def __init__(self, bot: Bot, bot_token: str, config: Config, stickers_repo: StickersRepository, guesses_repo: Optional[IGuessesRepository] = None):
         self.bot = bot
         self.bot_token = bot_token
         self.config = config
+        self.stickers_repo = stickers_repo
         self.guesses_repo = guesses_repo
     
     async def download_image(self, message: types.Message) -> Optional[tuple[bytes, str]]:
@@ -437,9 +439,12 @@ class MediaService:
         p = (payload or "").strip()
         if not p:
             return None
-        if isinstance(getattr(self.config, "STICKERS", None), dict):
-            if p in self.config.STICKERS:
-                return self.config.STICKERS[p]
+        
+        # Try to get from repository
+        sticker_id = self.stickers_repo.get_sticker(p)
+        if sticker_id:
+            return sticker_id
+            
         return p
     
     def _parse_keyboard_payload(self, payload: str) -> Optional[types.InlineKeyboardMarkup]:

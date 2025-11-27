@@ -6,7 +6,7 @@ import sys
 
 from core.dependencies import Container
 from presentation.handlers.commands import start, user, info, server, game, admin
-from presentation.handlers import messages, callbacks
+from presentation.handlers import messages, callbacks, admin_stickers
 
 
 logging.basicConfig(
@@ -110,6 +110,7 @@ def register_handlers(container: Container):
     dp.include_router(server.router)
     dp.include_router(game.router)
     dp.include_router(admin.router)
+    dp.include_router(admin_stickers.router)
     
     # Messages and callbacks
     dp.include_router(callbacks.router)

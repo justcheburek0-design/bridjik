@@ -8,7 +8,9 @@ from infrastructure.repositories.history import HistoryRepository
 from infrastructure.repositories.chat_logs import ChatLogsRepository
 from infrastructure.repositories.psevdos import PsevdoRepository
 from infrastructure.repositories.freezes import FreezesRepository
+from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.guesses import GuessesRepository
+from infrastructure.repositories.stickers import StickersRepository
 from infrastructure.external.mc_api import MinecraftAPI
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.gemini import GeminiAPI
@@ -50,6 +52,7 @@ class Container:
         self.psevdo_repo = PsevdoRepository(self.config.PSEVDO_FILE)
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.guesses_repo = GuessesRepository(self.config.GUESSES_FILE)
+        self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
         
         # External APIs
         self.mc_api = MinecraftAPI(
@@ -83,6 +86,7 @@ class Container:
             self.bot,
             self.config.BOT_TOKEN,
             self.config,
+            self.stickers_repo,
             self.guesses_repo
         )
         self.rag_service = RAGService(
@@ -122,5 +126,6 @@ class Container:
             "freezes_repo": self.freezes_repo,
             "history_repo": self.history_repo,
             "chat_logs_repo": self.chat_logs_repo,
+            "stickers_repo": self.stickers_repo,
         }
 
