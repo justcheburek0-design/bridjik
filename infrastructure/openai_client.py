@@ -4,7 +4,7 @@ from openai import AsyncOpenAI
 
 def create_openai_client(
     api_key: str,
-    base_url: str = "https://openrouter.ai/api/v1",
+    base_url: str,
     site_url: str = "https://t.me/MineBridgeBot",
     app_name: str = "MineBridge"
 ) -> AsyncOpenAI:

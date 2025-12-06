@@ -27,6 +27,7 @@ class Config:
     
     # API Keys
     OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    OPENAI_BASE_URL: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"))
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     JINA_API_KEY: str = field(default_factory=lambda: os.getenv("JINA_API_KEY", ""))
     PIXABAY_API_KEY: str = field(default_factory=lambda: os.getenv("PIXABAY_API_KEY", ""))
