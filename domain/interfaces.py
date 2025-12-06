@@ -12,7 +12,7 @@ class IHistoryRepository(ABC):
         pass
     
     @abstractmethod
-    def add_assistant_message(self, chat_id: int, user_id: int, text: str, reasoning_details: Optional[dict] = None) -> None:
+    def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
         """Add assistant message to history."""
         pass
     

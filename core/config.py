@@ -51,6 +51,7 @@ class Config:
     CHAT_LOGS_FILE: Path = field(init=False)
     FREEZES_FILE: Path = field(init=False)
     GUESSES_FILE: Path = field(init=False)
+    TOOLS_FILE: Path = field(init=False)
     
     # Memory limits
     GROUP_MAX_MESSAGES: int = 12
@@ -87,6 +88,7 @@ class Config:
         self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
         self.GUESSES_FILE = self.DATA_DIR / "guesses.json"
         self.STICKERS_FILE = self.DATA_DIR / "stickers.json"
+        self.TOOLS_FILE = self.BASE_DIR / "application" / "resources" / "tools.json"
         
         # Ensure data directory exists
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)

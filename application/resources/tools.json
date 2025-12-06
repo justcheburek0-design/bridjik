@@ -1,0 +1,129 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "get_player_info",
+      "description": "Get player information from MineBridge API by nickname or Telegram ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Player nickname or Telegram ID"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_server_status",
+      "description": "Get Minecraft server status (online, players, version, etc)",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_stickers",
+      "description": "Get list of available stickers. You can sometimes use sticker: [[sticker:name]]",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_news",
+      "description": "Get latest news from MineBridge news feed",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of news items to fetch (default: 5, max: 15)",
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Offset for pagination",
+            "default": 0
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_events",
+      "description": "Get events for a specific season",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season": {
+            "type": "integer",
+            "description": "Season number (-1 for latest season (default), 1 for first season)",
+            "default": -1
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_top_players",
+      "description": "Get top players from MineBridge",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of players to fetch (default: 5, max: 15)",
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Offset for pagination",
+            "default": 0
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_search",
+      "description": "Search the web for current information, news, or any topic. Use this when you need up-to-date information or facts not in your knowledge base.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return (default: 5, max: 10)",
+            "default": 5
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  }
+]

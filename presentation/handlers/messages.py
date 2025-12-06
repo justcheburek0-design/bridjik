@@ -345,7 +345,7 @@ async def auto_reply(
                 pass
 
         # Get AI response
-        answer, reasoning = await ai_service.complete(
+        answer = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
             message=message,
@@ -377,7 +377,7 @@ async def auto_reply(
         if user_id and chat_type == ChatType.PRIVATE:
             msg_to_save = build_message_text_for_save(message, prompt)
             history_repo.add_user_message(chat_id, user_id, msg_to_save)
-            history_repo.add_assistant_message(chat_id, user_id, answer, reasoning_details=reasoning)
+            history_repo.add_assistant_message(chat_id, user_id, answer)
 
     except Exception as e:
         logger.exception("Error in auto_reply")

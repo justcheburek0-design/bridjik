@@ -66,7 +66,7 @@ class AIService:
         message: Optional[types.Message] = None,
         save_history: bool = True,
         on_tool_update: Optional[Callable[[str], Awaitable[None]]] = None
-    ) -> Tuple[str, Optional[dict]]:
+    ) -> str:
         """Generate AI completion for given context."""
         use_thread = self._is_group_chat(message)
         full_system_prompt = system_prompt
@@ -102,156 +102,32 @@ class AIService:
                     continue
                 
                 # No tool calls, process final response
-                text, reasoning = self._process_response(response)
+                text = self._process_response(response)
                 
                 if save_history and text and not use_thread:
                     self.history_repo.add_assistant_message(
                         context.chat.id,
                         context.user.id,
-                        text,
-                        reasoning_details=reasoning
+                        text
                     )
                 
-                return text, reasoning
+                return text
                 
             # If loop limit reached, return what we have or error
-            return DEFAULT_ERROR_MESSAGE, None
+            return DEFAULT_ERROR_MESSAGE
             
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
-            return DEFAULT_ERROR_MESSAGE, None
+            return DEFAULT_ERROR_MESSAGE
     
     def _get_tools(self) -> List[dict]:
         """Get available tools definition."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_player_info",
-                    "description": "Get player information from MineBridge API by nickname or Telegram ID",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Player nickname or Telegram ID"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_server_status",
-                    "description": "Get Minecraft server status (online, players, version, etc)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_stickers",
-                    "description": "Get list of available stickers. You can sometimes use sticker: [[sticker:name]]",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_news",
-                    "description": "Get latest news from MineBridge news feed",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {
-                                "type": "integer",
-                                "description": "Number of news items to fetch (max 5)",
-                                "default": 5
-                            },
-                            "offset": {
-                                "type": "integer",
-                                "description": "Offset for pagination",
-                                "default": 0
-                            }
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_events",
-                    "description": "Get events for a specific season",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "season": {
-                                "type": "integer",
-                                "description": "Season number (-1 for latest season, 1 for first season)",
-                                "default": -1
-                            }
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_top_players",
-                    "description": "Get top players from MineBridge",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {
-                                "type": "integer",
-                                "description": "Number of players to fetch (max 5)",
-                                "default": 5
-                            },
-                            "offset": {
-                                "type": "integer",
-                                "description": "Offset for pagination",
-                                "default": 0
-                            }
-                        },
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "description": "Search the web for current information, news, or any topic. Use this when you need up-to-date information or facts not in your knowledge base.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query"
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": "Maximum number of results to return (default: 5, max: 10)",
-                                "default": 5
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            }
-        ]
+        try:
+            with open(self.config.TOOLS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load tools from {self.config.TOOLS_FILE}: {e}")
+            return []
     
     async def _execute_tool(self, tool_call: Any) -> dict:
         """Execute a tool call and return the result message."""
@@ -284,7 +160,7 @@ class AIService:
                 stickers = list(self.stickers_repo.get_all_stickers().keys())
                 content = f"Available stickers: {', '.join(stickers)}"
             elif name == "get_news":
-                limit = min(args.get("limit", 5), 5)  # Enforce max 5
+                limit = min(args.get("limit", 5), 15)
                 offset = args.get("offset", 0)
                 news_data = await self.news_api.fetch_news(limit, offset)
                 if news_data:
@@ -299,7 +175,7 @@ class AIService:
                 else:
                     content = "Failed to fetch events"
             elif name == "get_top_players":
-                limit = min(args.get("limit", 5), 5)  # Enforce max 5
+                limit = min(args.get("limit", 5), 15)
                 offset = args.get("offset", 0)
                 top_players_data = await self.mb_api.fetch_top_players(limit, offset)
                 if top_players_data:
@@ -308,7 +184,7 @@ class AIService:
                     content = "Failed to fetch top players"
             elif name == "web_search":
                 query = args.get("query")
-                max_results = min(args.get("max_results", 5), 10)  # Enforce max 10
+                max_results = min(args.get("max_results", 5), 10)
                 search_data = await self.tavily_api.search(query, max_results=max_results)
                 if search_data:
                     content = self.tavily_api.format_results(search_data)
@@ -488,23 +364,22 @@ class AIService:
         kwargs = {
             "model": self.model,
             "messages": messages,
-            "temperature": TEMPERATURE,
-            "extra_body": {"reasoning": {"enabled": True}}
+            "messages": messages,
+            "temperature": TEMPERATURE
         }
         if tools:
             kwargs["tools"] = tools
             
         return await self.client.chat.completions.create(**kwargs)
     
-    def _process_response(self, response: dict) -> Tuple[str, Optional[dict]]:
+    def _process_response(self, response: dict) -> str:
         """Process OpenAI API response."""
         message = response.choices[0].message
         content = message.content
-        reasoning = getattr(message, "reasoning_details", None)
         
         logger.info(f"OpenAI raw response: {content!r}")
         text = (content or "").strip()
-        return remove_html(text), reasoning
+        return remove_html(text)
     
     async def _build_user_input(
         self,

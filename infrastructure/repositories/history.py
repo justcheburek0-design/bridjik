@@ -86,12 +86,10 @@ class HistoryRepository(IHistoryRepository):
         self._history[key].append({"role": "user", "content": shorten(text)})
         self._save()
     
-    def add_assistant_message(self, chat_id: int, user_id: int, text: str, reasoning_details: Optional[dict] = None) -> None:
+    def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
         """Add assistant message to history in OpenAI format: {"role": "assistant", "content": "..."}"""
         key = self._make_key(chat_id, user_id)
         msg = {"role": "assistant", "content": shorten(text)}
-        if reasoning_details:
-            msg["reasoning_details"] = reasoning_details
         self._history[key].append(msg)
         self._save()
     
