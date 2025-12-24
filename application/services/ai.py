@@ -4,7 +4,6 @@ import logging
 import base64
 import json
 from typing import Optional, List, Tuple, Any, Callable, Awaitable
-from typing import Optional, List, Tuple, Any, Callable, Awaitable
 from openai import AsyncOpenAI, RateLimitError, APIError
 from aiogram import types
 
@@ -24,11 +23,10 @@ from utils.chat_helpers import (
     is_bot_message,
 )
 from utils.message_formatter import (
-    format_reply_message,
     format_chat_history_entry,
     format_chat_log_entry,
 )
-import edge_tts
+import httpx
 import tempfile
 from pathlib import Path
 
@@ -36,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
-TEMPERATURE = 1.0
+TEMPERATURE = 0.7
 
 
 class AIService:
@@ -215,63 +213,88 @@ class AIService:
         }
 
     async def generate_speech(
-        self, text: str, voice: str = "ru-RU-DmitryNeural"
+        self,
+        text: str,
+        language_id: str = "ru",
+        ref_wav: Optional[str] = None,
+        exaggeration: float = 0.5,
+        temperature: float = 0.8,
+        seed: int = 0,
+        cfg_weight: float = 0.5,
     ) -> Optional[bytes]:
-        """Generate speech from text using Edge TTS.
+        """Generate speech from text using ResembleAI Chatterbox TTS.
 
         Args:
-            text: Text to convert to speech
-            voice: Voice to use (default: ru-RU-DmitryNeural)
-                   Available Russian voices:
-                   - ru-RU-DmitryNeural (male)
-                   - ru-RU-SvetlanaNeural (female)
+            text: Text to convert to speech (max 300 characters)
+            language_id: Language code (default: ru)
+            ref_wav: Path to reference audio for voice cloning (wav/mp3)
+            exaggeration: Expressiveness (0.0-1.0, default: 0.5)
+            temperature: Variability (0.0-1.0, default: 0.8)
+            seed: Seed for generation (0 for random)
+            cfg_weight: Classifier-Free Guidance weight (default: 0.5)
 
         Returns:
-            Audio bytes in OGG format or None on error
+            Audio bytes in WAV format or None on error
         """
-        # Validate and clean text
         if not text:
             logger.warning("Empty text provided for speech generation")
             return None
 
-        # Remove characters that Edge TTS cannot process
+        # Clean text: remove excessive whitespace and limit length
         import re
 
-        cleaned_text = text.strip()
-        # Remove markdown/formatting that may cause issues
-        cleaned_text = re.sub(r"[*_`~\[\]<>]", "", cleaned_text)
-        # Remove excessive whitespace
-        cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
+        cleaned_text = re.sub(r"\s+", " ", text.strip())
+        if len(cleaned_text) > 300:
+            cleaned_text = cleaned_text[:300]
 
-        if not cleaned_text or len(cleaned_text) < 2:
-            logger.warning(f"Text too short or empty after cleaning: '{text[:50]}...'")
+        if not cleaned_text:
             return None
 
         try:
-            # Generate speech to temporary file
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
-                tmp_path = tmp_file.name
+            # Prepare multipart data
+            files = {}
+            data = {
+                "text": cleaned_text,
+                "language_id": language_id,
+                "exaggeration": str(exaggeration),
+                "temperature": str(temperature),
+                "cfg_weight": str(cfg_weight),
+            }
 
-            try:
-                # Generate speech using Edge TTS
-                communicate = edge_tts.Communicate(cleaned_text, voice)
-                await communicate.save(tmp_path)
+            # Prepare reference audio
+            ref_path = None
+            if ref_wav and Path(ref_wav).exists():
+                ref_path = Path(ref_wav)
+            else:
+                default_wav = self.config.VOICES_DIR / "voice.wav"
+                default_mp3 = self.config.VOICES_DIR / "voice.mp3"
+                if default_wav.exists():
+                    ref_path = default_wav
+                elif default_mp3.exists():
+                    ref_path = default_mp3
 
-                # Read the generated audio file
-                audio_bytes = Path(tmp_path).read_bytes()
+            if ref_path:
+                files["reference_audio"] = (ref_path.name, ref_path.read_bytes())
 
-                logger.info(
-                    f"Generated speech with Edge TTS (voice: {voice}, size: {len(audio_bytes)} bytes)"
-                )
-                return audio_bytes
-            finally:
-                # Clean up temp file
-                try:
-                    Path(tmp_path).unlink()
-                except Exception:
-                    pass
+            # Call local FastAPI server
+            tts_url = self.config.TTS_URL
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(tts_url, data=data, files=files)
+
+                if response.status_code == 200:
+                    audio_bytes = response.content
+                    logger.info(
+                        f"Generated speech with local TTS (lang: {language_id}, size: {len(audio_bytes)} bytes)"
+                    )
+                    return audio_bytes
+                else:
+                    logger.error(
+                        f"Local TTS server returned error {response.status_code}: {response.text}"
+                    )
+                    return None
+
         except Exception:
-            logger.exception("Failed to generate speech with Edge TTS")
+            logger.exception("Failed to generate speech with local TTS server")
             return None
 
     def _is_group_chat(self, message: Optional[types.Message]) -> bool:
@@ -412,7 +435,6 @@ class AIService:
         kwargs = {
             "model": self.model,
             "messages": messages,
-            "messages": messages,
             "temperature": TEMPERATURE,
         }
         if tools:
@@ -427,6 +449,12 @@ class AIService:
 
         logger.info(f"OpenAI raw response: {content!r}")
         text = (content or "").strip()
+
+        # Filter out hallucinated empty markdown links like ]() that sometimes repeat endlessly
+        import re
+
+        text = re.sub(r"(\]\(\)){2,}", "", text)
+
         return remove_html(text)
 
     async def _build_user_input(
