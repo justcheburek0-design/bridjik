@@ -30,6 +30,7 @@ from utils.chat_helpers import (
 from utils.message_formatter import combine_text_and_media, build_message_text_for_save
 from utils.message import get_reply_quote
 from utils.error_handlers import safe_execute_async
+from utils.text import truncate_text
 
 
 logger = logging.getLogger(__name__)
@@ -386,9 +387,6 @@ async def auto_reply(
         if not answer:
             answer = ERROR_MESSAGE
 
-        # Truncate answer to avoid spam
-        from utils.text import truncate_text
-
         answer = truncate_text(answer, config.MAX_OUTPUT_LENGTH)
 
         # Send response with media tag support
@@ -409,12 +407,6 @@ async def auto_reply(
         else:
             # Fallback if no messages were captured (should not happen if answer is not empty)
             chat_logs_repo.add_message(chat_id, "Ассистент", True, answer)
-
-        # Also save to history for private chats
-        if user_id and chat_type == ChatType.PRIVATE:
-            msg_to_save = build_message_text_for_save(message, prompt)
-            history_repo.add_user_message(chat_id, user_id, msg_to_save)
-            history_repo.add_assistant_message(chat_id, user_id, answer)
 
     except Exception as e:
         logger.exception("Error in auto_reply")

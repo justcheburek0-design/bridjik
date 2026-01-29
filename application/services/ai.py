@@ -73,13 +73,10 @@ class AIService:
         on_tool_update: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> str:
         """Generate AI completion for given context."""
-        use_thread = self._is_group_chat(message)
         full_system_prompt = system_prompt
 
-        user_input = await self._build_user_input(context, use_thread, message)
-        messages = self._build_messages(
-            full_system_prompt, user_input, context, use_thread
-        )
+        user_input = await self._build_user_input(context, message)
+        messages = self._build_messages(full_system_prompt, user_input, context)
         tools = self._get_tools()
 
         try:
@@ -87,6 +84,14 @@ class AIService:
             for _ in range(10):
                 response = await self._call_openai(messages, tools)
                 response_message = response.choices[0].message
+
+                # Check for tool calls
+                # Update status if AI provided content
+                if response_message.content and on_tool_update:
+                    try:
+                        await on_tool_update(response_message.content)
+                    except Exception:
+                        logger.warning("Failed to update tool status", exc_info=True)
 
                 # Check for tool calls
                 if response_message.tool_calls:
@@ -112,11 +117,6 @@ class AIService:
 
                 # No tool calls, process final response
                 text = self._process_response(response)
-
-                if save_history and text and not use_thread:
-                    self.history_repo.add_assistant_message(
-                        context.chat.id, context.user.id, text
-                    )
 
                 return text
 
@@ -297,27 +297,11 @@ class AIService:
             logger.exception("Failed to generate speech with local TTS server")
             return None
 
-    def _is_group_chat(self, message: Optional[types.Message]) -> bool:
-        """Check if message is from a group chat.
-
-        Args:
-            message: Telegram message or None
-
-        Returns:
-            True if message is from a group chat
-        """
-        if message is None:
-            return False
-
-        chat_type = getattr(message.chat, "type", None)
-        return is_group_chat(chat_type)
-
     def _build_messages(
         self,
         system_prompt: str,
         user_input: str,
         context: MessageContext,
-        use_thread: bool,
     ) -> List[dict]:
         """Build messages list for OpenAI API.
 
@@ -333,7 +317,6 @@ class AIService:
             system_prompt: System prompt text
             user_input: User input JSON string with context
             context: Message context
-            use_thread: Whether to use thread (group chat)
 
         Returns:
             List of message dictionaries in OpenAI format
@@ -358,52 +341,46 @@ class AIService:
 
         messages = [{"role": "system", "content": system_content}]
 
-        # Add history for private chats
-        if not use_thread:
-            history = self.history_repo.get_history(context.chat.id, context.user.id)
-            messages.extend(history)
-        else:
-            # For group chats, convert recent_messages to proper message format
-            chat_context = input_data.get("chat_context", {})
-            recent_messages = chat_context.get("recent_messages", [])
+        # Build messages from chat logs (previously "group chat" logic, now universal)
+        chat_context = input_data.get("chat_context", {})
+        recent_messages = chat_context.get("recent_messages", [])
 
-            # Skip leading assistant messages to ensure first message is from user
-            # (required by some providers like Amazon Nova)
-            first_user_found = False
-            for msg in recent_messages:
-                author = msg.get("author", "Unknown")
-                is_bot = msg.get("is_bot", False)
-                text = msg.get("text", "")
+        # Skip leading assistant messages to ensure first message is from user
+        # (required by some providers like Amazon Nova)
+        first_user_found = False
+        for msg in recent_messages:
+            author = msg.get("author", "Unknown")
+            is_bot = msg.get("is_bot", False)
+            text = msg.get("text", "")
 
-                if not text:
+            if not text:
+                continue
+            elif text.startswith("🔄 Бот перезагружен"):
+                is_bot = True
+
+            # Skip assistant messages until we find the first user message
+            if not first_user_found:
+                if is_bot:
                     continue
-                elif text.startswith("🔄 Бот перезагружен"):
-                    is_bot = True
+                first_user_found = True
 
-                # Skip assistant messages until we find the first user message
-                if not first_user_found:
-                    if is_bot:
-                        continue
-                    first_user_found = True
+            role = "assistant" if is_bot else "user"
+            content = text if is_bot else f"{author}: {text}"
 
-                role = "assistant" if is_bot else "user"
-                content = text if is_bot else f"{author}: {text}"
-
-                messages.append({"role": role, "content": content})
+            messages.append({"role": role, "content": content})
 
         # Build current message content
         current_msg = input_data.get("current_message", {})
         current_text = current_msg.get("text", context.prompt)
 
-        # Add reply context if present
-        if use_thread:
-            chat_context = input_data.get("chat_context", {})
-            reply_to = chat_context.get("reply_to")
-            if reply_to:
-                reply_author = reply_to.get("author", "Unknown")
-                reply_text = reply_to.get("text", "")
-                if reply_text:
-                    current_text = f'[Ответ на сообщение от {reply_author}: "{reply_text[:50]}..."]\n{current_text}'
+        # Add reply context if present (universal)
+        chat_context = input_data.get("chat_context", {})
+        reply_to = chat_context.get("reply_to")
+        if reply_to:
+            reply_author = reply_to.get("author", "Unknown")
+            reply_text = reply_to.get("text", "")
+            if reply_text:
+                current_text = f'[Ответ на сообщение от {reply_author}: "{reply_text[:50]}..."]\n{current_text}'
 
         # Handle images
         if context.has_image and context.image_bytes:
@@ -460,14 +437,12 @@ class AIService:
     async def _build_user_input(
         self,
         context: MessageContext,
-        use_thread: bool,
         message: Optional[types.Message],
     ) -> str:
         """Build user input with JSON context.
 
         Args:
-            context: Message context
-            use_thread: Whether to use thread (group chat)
+            context: MessageContext
             message: Telegram message
 
         Returns:
@@ -488,16 +463,10 @@ class AIService:
                 structured_data["context_text"] = context.rag_context
 
         # Add chat context for groups (history is kept as separate messages)
-        if use_thread and message:
-            chat_context = self._build_group_chat_context(context, message)
-            if chat_context:
-                structured_data["chat_context"] = chat_context
-        else:
-            # For private chats, only add reply if present
-            if message and message.reply_to_message:
-                reply_context = self._build_reply_context(message, is_private=True)
-                if reply_context:
-                    structured_data["reply_to"] = reply_context
+        # Add chat context for all chats (universally from chat logs)
+        chat_context = self._build_chat_context_from_logs(context, message)
+        if chat_context:
+            structured_data["chat_context"] = chat_context
 
         # Add current message
         display_name = context.user.get_display_name()
@@ -520,10 +489,10 @@ class AIService:
         b64 = base64.b64encode(image_bytes).decode("ascii")
         return f"data:{mt};base64,{b64}"
 
-    def _build_group_chat_context(
+    def _build_chat_context_from_logs(
         self, context: MessageContext, message: types.Message
     ) -> dict:
-        """Build structured group chat context.
+        """Build structured chat context from chat logs.
 
         Args:
             context: Message context
@@ -534,9 +503,8 @@ class AIService:
         """
         chat_context = {}
 
-        # Add reply message if present
         if message.reply_to_message:
-            reply_data = self._build_reply_context(message, is_private=False)
+            reply_data = self._build_reply_context(message)
             if reply_data:
                 chat_context["reply_to"] = reply_data
 
@@ -558,14 +526,11 @@ class AIService:
 
         return chat_context
 
-    def _build_reply_context(
-        self, message: types.Message, is_private: bool
-    ) -> Optional[dict]:
+    def _build_reply_context(self, message: types.Message) -> Optional[dict]:
         """Build structured reply context.
 
         Args:
             message: Telegram message
-            is_private: Whether this is a private chat
 
         Returns:
             Dictionary with reply context or None
@@ -577,20 +542,16 @@ class AIService:
         replied_msg_id = get_message_id(replied_msg)
 
         # Get author name
-        if is_private:
-            author_name = (
-                "Пользователь" if not is_bot_message(replied_msg) else "Ассистент"
-            )
+        if is_bot_message(replied_msg):
+            author_name = "Ассистент"
         else:
             author_name = get_author_name(replied_msg, "unknown")
-            if is_bot_message(replied_msg):
-                author_name = "Ассистент"
 
         # Get text content
         text = get_message_text(replied_msg)
 
-        # If text is empty or placeholder, try to fetch from logs (for group chats)
-        if (not text or text == "(пусто)") and not is_private:
+        # If text is empty or placeholder, try to fetch from logs
+        if not text or text == "(пусто)":
             log_msg = self.chat_logs_repo.get_message_by_id(
                 message.chat.id, replied_msg_id
             )

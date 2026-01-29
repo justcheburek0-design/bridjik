@@ -117,7 +117,7 @@ class Config:
         self.RAG_INDEX_DIR = self.BASE_DIR / ".rag_cache"
         self.PROMPTS_DIR = self.BASE_DIR / "prompts"
         self.PSEVDO_FILE = self.DATA_DIR / "psevdos.json"
-        self.HISTORY_FILE = self.DATA_DIR / "history.json"
+        self.HISTORY_FILE = self.DATA_DIR / "chat_logs.json"
         self.CHAT_LOGS_FILE = self.DATA_DIR / "chat_logs.json"
         self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
         self.GUESSES_FILE = self.DATA_DIR / "guesses.json"
