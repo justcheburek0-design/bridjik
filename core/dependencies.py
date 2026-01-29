@@ -1,4 +1,5 @@
 """Dependency Injection container."""
+
 from pathlib import Path
 
 from core.config import Config
@@ -7,7 +8,6 @@ from infrastructure.openai_client import create_openai_client
 from infrastructure.repositories.history import HistoryRepository
 from infrastructure.repositories.chat_logs import ChatLogsRepository
 from infrastructure.repositories.psevdos import PsevdoRepository
-from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.guesses import GuessesRepository
 from infrastructure.repositories.stickers import StickersRepository
@@ -29,49 +29,41 @@ from presentation.formatters import Formatter
 
 class Container:
     """Dependency injection container."""
-    
+
     def __init__(self):
         # Core
         self.config = Config()
         self.config.validate()
-        
+
         # Infrastructure
         self.bot = create_bot(self.config.BOT_TOKEN)
         self.dispatcher = create_dispatcher()
         self.openai_client = create_openai_client(
-            self.config.OPENAI_API_KEY,
-            self.config.OPENAI_BASE_URL
+            self.config.GOOGLE_API_KEY,
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
         )
-        
+
         # Repositories
         self.history_repo = HistoryRepository(
-            self.config.HISTORY_FILE,
-            self.config.DM_MAX_MESSAGES
+            self.config.HISTORY_FILE, self.config.DM_MAX_MESSAGES
         )
         self.chat_logs_repo = ChatLogsRepository(
-            self.config.CHAT_LOGS_FILE,
-            self.config.GROUP_MAX_MESSAGES
+            self.config.CHAT_LOGS_FILE, self.config.GROUP_MAX_MESSAGES
         )
         self.psevdo_repo = PsevdoRepository(self.config.PSEVDO_FILE)
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.guesses_repo = GuessesRepository(self.config.GUESSES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
-        
+
         # External APIs
-        self.mc_api = MinecraftAPI(
-            self.config.MC_SERVER_HOST,
-            self.config.MC_CACHE_TTL
-        )
+        self.mc_api = MinecraftAPI(self.config.MC_SERVER_HOST, self.config.MC_CACHE_TTL)
         self.mb_api = MineBridgeAPI(self.config.MB_HOST)
-        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.GEMINI_MODEL)
+        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.AI_MODEL)
         self.news_api = NewsAPI()
         self.tavily_api = TavilyAPI(self.config.TAVILY_API_KEY)
-        
+
         # Services
-        self.subscription_service = SubscriptionService(
-            self.bot,
-            self.config.CHANNEL
-        )
+        self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
         self.user_service = UserService(self.psevdo_repo)
         self.game_service = GameService(self.guesses_repo)
         self.ai_service = AIService(
@@ -84,30 +76,24 @@ class Container:
             self.news_api,
             self.tavily_api,
             self.config,
-            self.stickers_repo
+            self.stickers_repo,
         )
         self.media_service = MediaService(
             self.bot,
             self.config.BOT_TOKEN,
             self.config,
             self.stickers_repo,
-            self.guesses_repo
+            self.guesses_repo,
         )
-        self.rag_service = RAGService(
-            self.config,
-            self.mc_api,
-            self.mb_api
-        )
+        self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)
         self.strings_service = StringsService(self.config)
-        
+
         # Presentation
         self.keyboard_builder = KeyboardBuilder(
-            self.config.CHANNEL,
-            self.config.SUPPORT_URL,
-            self.config.DONATE_URL
+            self.config.CHANNEL, self.config.SUPPORT_URL, self.config.DONATE_URL
         )
         self.formatter = Formatter()
-    
+
     def get_handler_dependencies(self) -> dict:
         """Get dependencies dict for handlers."""
         return {
@@ -132,4 +118,3 @@ class Container:
             "chat_logs_repo": self.chat_logs_repo,
             "stickers_repo": self.stickers_repo,
         }
-

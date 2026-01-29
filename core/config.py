@@ -92,10 +92,7 @@ class Config:
 
     # AI Models
     AI_MODEL: str = field(
-        default_factory=lambda: os.getenv("AI_MODEL", "x-ai/grok-4-fast")
-    )
-    GEMINI_MODEL: str = field(
-        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        default_factory=lambda: os.getenv("AI_MODEL", "gemini-2.5-flash")
     )
     TTS_URL: str = field(
         default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts")
