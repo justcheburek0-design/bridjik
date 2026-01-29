@@ -76,8 +76,8 @@ class Config:
     VOICES_DIR: Path = field(init=False)
 
     # Memory limits
-    GROUP_MAX_MESSAGES: int = 12
-    DM_MAX_MESSAGES: int = 5
+    GROUP_MAX_MESSAGES: int = 30
+    DM_MAX_MESSAGES: int = 10
 
     # RAG settings
     RAG_CHUNK_SIZE: int = 1500
