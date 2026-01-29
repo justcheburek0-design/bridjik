@@ -380,7 +380,6 @@ async def auto_reply(
             context=context,
             system_prompt=system_prompt,
             message=message,
-            save_history=False,  # We handle history saving here to ensure correct order
             on_tool_update=update_status,
         )
 

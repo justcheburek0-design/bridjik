@@ -69,7 +69,6 @@ class AIService:
         context: MessageContext,
         system_prompt: str,
         message: Optional[types.Message] = None,
-        save_history: bool = True,
         on_tool_update: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> str:
         """Generate AI completion for given context."""
