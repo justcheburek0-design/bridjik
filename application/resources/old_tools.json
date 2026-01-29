@@ -1,0 +1,29 @@
+[{
+    "type": "function",
+    "function": {
+      "name": "get_events",
+      "description": "Get events for a specific season",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "season": {
+            "type": "integer",
+            "description": "Season number (-1 for latest season (default), 1 for first season)",
+            "default": -1
+          }
+        },
+        "required": []
+      }
+    }
+  },{
+    "type": "function",
+    "function": {
+      "name": "get_server_status",
+      "description": "Get Minecraft server status (online, players, version, etc)",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  }]
