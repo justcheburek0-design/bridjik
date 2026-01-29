@@ -585,13 +585,16 @@ class MediaService:
                 try:
                     return await msg.edit_text(text, reply_markup=reply_markup)
                 except TelegramBadRequest as e:
-                    if "can't parse entities" in str(e):
+                    s_e = str(e)
+                    if "can't parse entities" in s_e:
                         logger.warning(
                             "HTML parse error in edit, retrying with plain text"
                         )
                         return await msg.edit_text(
                             text, reply_markup=reply_markup, parse_mode=None
                         )
+                    if "message is not modified" in s_e:
+                        return msg
                     raise
 
             async def safe_answer(text, reply_markup=None):

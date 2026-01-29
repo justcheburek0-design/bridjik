@@ -39,7 +39,7 @@ class Container:
         self.bot = create_bot(self.config.BOT_TOKEN)
         self.dispatcher = create_dispatcher()
         self.openai_client = create_openai_client(
-            self.config.GOOGLE_API_KEY,
+            self.config.OPENAI_API_KEY,
             self.config.OPENAI_BASE_URL,
         )
 
