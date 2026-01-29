@@ -1,4 +1,9 @@
-"""Message formatting utilities."""
+"""Утилиты для форматирования сообщений.
+
+Модуль содержит функции для форматирования сообщений, комбинирования текста
+с медиа-описаниями и создания записей для истории чата и логов.
+"""
+
 from typing import Optional
 from aiogram import types
 
@@ -12,44 +17,51 @@ def format_reply_message(
     replied_msg_id: Optional[int] = None,
     quote: Optional[str] = None,
     is_private: bool = False,
-    replied_message_text: Optional[str] = None
+    replied_message_text: Optional[str] = None,
 ) -> str:
-    """Format reply message for AI context.
-    
+    """Форматирует сообщение-ответ для контекста AI.
+
+    Создаёт читаемое представление сообщения, которое является ответом на другое сообщение,
+    включая информацию о процитированном тексте.
+
     Args:
-        message: Telegram message
-        author_name: Author display name
-        current_msg_id: Current message ID
-        replied_msg_id: ID of replied message
-        quote: Quote text if available
-        is_private: Whether this is a private chat
-        replied_message_text: Full text of replied message if available
-        
+        message: Telegram сообщение
+        author_name: Отображаемое имя автора
+        current_msg_id: ID текущего сообщения (опционально)
+        replied_msg_id: ID сообщения, на которое отвечают (опционально)
+        quote: Процитированный текст (опционально)
+        is_private: Флаг приватного чата
+        replied_message_text: Полный текст сообщения, на которое отвечают (опционально)
+
     Returns:
-        Formatted reply message string
+        Форматированная строка с информацией об ответе
+
+    Examples:
+        >>> # В группе: "[123] Иван (отвечая на сообщение 122): Согласен"
+        >>> # В личке: "Пользователь (отвечая на \"твой текст\"): Ответ"
     """
     current_text = get_message_text(message)
-    
-    # Build reply prefix
-    if is_private:
-        author_label = "Пользователь"
-    else:
-        author_label = author_name
-    
-    # Build replied message info
+
+    # Определяем метку автора
+    author_label = "Пользователь" if is_private else author_name
+
+    # Формируем информацию о сообщении, на которое отвечают
     if replied_message_text:
-        # Use full text if available
-        replied_info = f"сообщение {replied_msg_id} (\"{replied_message_text[:100]}{'...' if len(replied_message_text) > 100 else ''}\")"
+        # Используем полный текст, если доступен (обрезаем до 100 символов)
+        truncated = replied_message_text[:100]
+        if len(replied_message_text) > 100:
+            truncated += "..."
+        replied_info = f'сообщение {replied_msg_id} ("{truncated}")'
     elif quote:
-        # Use quote if available
-        replied_info = f"\"{quote}\""
+        # Используем цитату, если доступна
+        replied_info = f'"{quote}"'
     elif replied_msg_id:
-        # Use message ID only
+        # Используем только ID сообщения
         replied_info = f"сообщение {replied_msg_id}"
     else:
         replied_info = "сообщение"
-    
-    # Format with replied message info
+
+    # Форматируем финальное сообщение
     if current_msg_id:
         return f"[{current_msg_id}] {author_label} (отвечая на {replied_info}): {current_text}"
     else:
@@ -57,17 +69,28 @@ def format_reply_message(
 
 
 def combine_text_and_media(text: str, media_desc: str) -> str:
-    """Combine text and media description.
-    
+    """Комбинирует текст и описание медиа.
+
+    Объединяет текстовое содержимое с описанием медиа в правильном порядке.
+    Если оба параметра пусты, возвращает пустую строку.
+
     Args:
-        text: Text content
-        media_desc: Media description
-        
+        text: Текстовое содержимое
+        media_desc: Описание медиа-контента
+
     Returns:
-        Combined string, or empty string if both are empty
+        Объединённая строка или пустая строка
+
+    Examples:
+        >>> combine_text_and_media("Привет", "🖼️ Фото")
+        "🖼️ Фото\\n\\nПривет"
+        >>> combine_text_and_media("", "🎤 Голосовое сообщение (15с)")
+        "🎤 Голосовое сообщение (15с)"
+        >>> combine_text_and_media("Текст", "")
+        "Текст"
     """
     if text and media_desc:
-        return f"{media_desc}\n\n{text}"
+        return f"{media_desc}\\n\\n{text}"
     elif media_desc:
         return media_desc
     elif text:
@@ -77,53 +100,65 @@ def combine_text_and_media(text: str, media_desc: str) -> str:
 
 
 def build_message_text_for_save(message: types.Message, prompt: str) -> str:
-    """Build message text for saving to history/logs.
-    
+    """Формирует текст сообщения для сохранения в историю/логи.
+
+    Комбинирует пользовательский текст prompt с описанием медиа из сообщения.
+
     Args:
-        message: Telegram message
-        prompt: User prompt text
-        
+        message: Telegram сообщение
+        prompt: Текст промпта пользователя
+
     Returns:
-        Combined text with media description
+        Объединённый текст с медиа или "(пусто)" если текст отсутствует
     """
     media_desc = get_media_description(message)
     return combine_text_and_media(prompt, media_desc) or "(пусто)"
 
 
 def format_chat_history_entry(role: str, text: str) -> str:
-    """Format single history entry.
-    
+    """Форматирует запись для истории чата.
+
+    Создаёт читаемую запись для истории переписки с AI.
+
     Args:
-        role: Role name ("user" or "assistant")
-        text: Message text
-        
+        role: Роль отправителя ("user" или "assistant")
+        text: Текст сообщения
+
     Returns:
-        Formatted entry string
+        Форматированная строка записи
+
+    Examples:
+        >>> format_chat_history_entry("user", "Как дела?")
+        "Пользователь: Как дела?"
+        >>> format_chat_history_entry("assistant", "Отлично!")
+        "Ассистент: Отлично!"
     """
     who = "Пользователь" if role == "user" else "Ассистент"
     return f"{who}: {text}"
 
 
-def format_chat_log_entry(
-    message_id: Optional[int],
-    author: str,
-    is_bot: bool,
-    text: str
-) -> str:
-    """Format single chat log entry.
-    
+def format_chat_log_entry(message_id: Optional[int], author: str, is_bot: bool, text: str) -> str:
+    """Форматирует запись для лога чата.
+
+    Создаёт запись для общего лога сообщений с указанием ID и автора.
+
     Args:
-        message_id: Message ID if available
-        author: Author name
-        is_bot: Whether author is a bot
-        text: Message text
-        
+        message_id: ID сообщения в Telegram (если доступен)
+        author: Имя автора сообщения
+        is_bot: Флаг, является ли автор ботом
+        text: Текст сообщения
+
     Returns:
-        Formatted entry string
+        Форматированная строка записи лога
+
+    Examples:
+        >>> format_chat_log_entry(123, "Иван", False, "Привет")
+        "[123] Иван: Привет"
+        >>> format_chat_log_entry(None, "Bot", True, "Здравствуйте")
+        "Ассистент: Здравствуйте"
     """
     role = "Ассистент" if is_bot else author
     if message_id:
         return f"[{message_id}] {role}: {text}"
     else:
         return f"{role}: {text}"
-

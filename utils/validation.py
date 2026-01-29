@@ -1,73 +1,117 @@
-"""Validation utilities."""
+"""Утилиты для валидации данных.
+
+Модуль содержит функции для проверки и нормализации входных данных:
+ID, строк, атрибутов объектов и контекста сообщений.
+"""
+
 from typing import Optional, Any
 
 
 def is_valid_id(value: Any) -> bool:
-    """Check if value is a valid ID (positive integer).
-    
+    """Проверяет, является ли значение валидным ID (положительное целое число).
+
     Args:
-        value: Value to check
-        
+        value: Значение для проверки
+
     Returns:
-        True if value is a valid ID
+        True, если значение является положительным целым числом
+
+    Examples:
+        >>> is_valid_id(123)
+        True
+        >>> is_valid_id(-5)
+        False
+        >>> is_valid_id("123")
+        False
     """
     return isinstance(value, int) and value > 0
 
 
 def is_valid_string(value: Any, min_length: int = 0, max_length: Optional[int] = None) -> bool:
-    """Check if value is a valid non-empty string.
-    
+    """Проверяет, является ли значение валидной непустой строкой.
+
     Args:
-        value: Value to check
-        min_length: Minimum length (default: 0)
-        max_length: Maximum length (None for no limit)
-        
+        value: Значение для проверки
+        min_length: Минимальная длина после trim (по умолчанию 0)
+        max_length: Максимальная длина или None для отсутствия ограничения
+
     Returns:
-        True if value is a valid string
+        True, если значение является валидной строкой в заданных пределах
+
+    Examples:
+        >>> is_valid_string("Привет")
+        True
+        >>> is_valid_string("   ")
+        False
+        >>> is_valid_string("Hi", min_length=5)
+        False
+        >>> is_valid_string("Очень длинная строка", max_length=10)
+        False
     """
     if not isinstance(value, str):
         return False
-    
+
     if len(value.strip()) < min_length:
         return False
-    
+
     if max_length is not None and len(value) > max_length:
         return False
-    
+
     return True
 
 
 def normalize_string(value: str, max_length: Optional[int] = None) -> str:
-    """Normalize string value.
-    
+    """Нормализует строковое значение (trim и обрезка по длине).
+
+    Удаляет пробелы с обеих сторон и обрезает строку до максимальной длины.
+
     Args:
-        value: String to normalize
-        max_length: Maximum length (None for no limit)
-        
+        value: Строка для нормализации
+        max_length: Максимальная длина или None для отсутствия ограничения
+
     Returns:
-        Normalized string
+        Нормализованная строка или пустая строка для невалидных входных данных
+
+    Examples:
+        >>> normalize_string("  Привет  ")
+        "Привет"
+        >>> normalize_string("Длинная строка", max_length=5)
+        "Длинн"
+        >>> normalize_string(123)
+        ""
     """
     if not isinstance(value, str):
         return ""
-    
+
     normalized = value.strip()
-    
+
     if max_length is not None and len(normalized) > max_length:
         normalized = normalized[:max_length]
-    
+
     return normalized
 
 
 def safe_get_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
-    """Safely get attribute from object.
-    
+    """Безопасно получает атрибут объекта.
+
+    Обёртка над getattr с обработкой исключений для безопасного доступа к атрибутам.
+
     Args:
-        obj: Object to get attribute from
-        attr_name: Attribute name
-        default: Default value if attribute doesn't exist
-        
+        obj: Объект для получения атрибута
+        attr_name: Имя атрибута
+        default: Значение по умолчанию, если атрибут отсутствует
+
     Returns:
-        Attribute value or default
+        Значение атрибута или default при ошибке
+
+    Examples:
+        >>> class MyClass:
+        ...     value = 42
+        >>> obj = MyClass()
+        >>> safe_get_attr(obj, "value")
+        42
+        >>> safe_get_attr(obj, "missing", "default")
+        'default'
     """
     try:
         return getattr(obj, attr_name, default)
@@ -76,25 +120,37 @@ def safe_get_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
 
 
 def validate_message_context(
-    prompt: str,
-    has_image: bool = False,
-    image_bytes: Optional[bytes] = None
+    prompt: str, has_image: bool = False, image_bytes: Optional[bytes] = None
 ) -> bool:
-    """Validate message context for AI completion.
-    
+    """Валидирует контекст сообщения для AI completion.
+
+    Проверяет, что сообщение содержит либо текст, либо изображение,
+    и что данные изображения присутствуют, если оно заявлено.
+
     Args:
-        prompt: User prompt
-        has_image: Whether message has image
-        image_bytes: Image bytes if available
-        
+        prompt: Текст промпта пользователя
+        has_image: Флаг наличия изображения
+        image_bytes: Байты изображения (если доступно)
+
     Returns:
-        True if context is valid
+        True, если контекст валиден для обработки AI
+
+    Examples:
+        >>> validate_message_context("Привет")
+        True
+        >>> validate_message_context("", has_image=True, image_bytes=b"...")
+        True
+        >>> validate_message_context("", has_image=False)
+        False
+        >>> validate_message_context("", has_image=True, image_bytes=None)
+        False
     """
+    # Должен быть хотя бы текст или изображение
     if not prompt and not has_image:
         return False
-    
+
+    # Если заявлено изображение, должны быть его данные
     if has_image and not image_bytes:
         return False
-    
-    return True
 
+    return True

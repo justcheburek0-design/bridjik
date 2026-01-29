@@ -44,6 +44,15 @@ Thumbs.db
 # Optional: keep a template tracked
 # !.env.example
 
+# ---- Session files ----
+*.session
+*.session-journal
+
+# ---- Archive ----
+archive/
+
+# ---- Executables ----
 *.exe
 
+# ---- Data directory ----
 data/
