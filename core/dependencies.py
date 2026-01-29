@@ -40,7 +40,7 @@ class Container:
         self.dispatcher = create_dispatcher()
         self.openai_client = create_openai_client(
             self.config.GOOGLE_API_KEY,
-            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            self.config.OPENAI_BASE_URL,
         )
 
         # Repositories
@@ -58,7 +58,7 @@ class Container:
         # External APIs
         self.mc_api = MinecraftAPI(self.config.MC_SERVER_HOST, self.config.MC_CACHE_TTL)
         self.mb_api = MineBridgeAPI(self.config.MB_HOST)
-        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.AI_MODEL)
+        self.gemini_api = GeminiAPI(self.config.GOOGLE_API_KEY, self.config.GEMINI_MODEL)
         self.news_api = NewsAPI()
         self.tavily_api = TavilyAPI(self.config.TAVILY_API_KEY)
 
