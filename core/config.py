@@ -100,6 +100,12 @@ class Config:
     TTS_URL: str = field(
         default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts")
     )
+    ENABLE_TTS: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_TTS", "True").lower() == "true"
+    )
+    MAX_OUTPUT_LENGTH: int = field(
+        default_factory=lambda: int(os.getenv("MAX_OUTPUT_LENGTH", "4000"))
+    )
 
     # Freeze options (hours)
     FREEZE_OPTIONS: tuple = (1, 4, 12, 24)
