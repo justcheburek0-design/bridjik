@@ -1,7 +1,8 @@
 """Тесты для domain/entities.py."""
 
 import pytest
-from domain.entities import User, Chat, MessageContext
+
+from domain.entities import Chat, MessageContext, User
 
 
 class TestUser:

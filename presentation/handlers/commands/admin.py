@@ -1,11 +1,12 @@
 """Admin command handlers."""
+
 import logging
-from aiogram import types, Router
+
+from aiogram import Router, types
 from aiogram.filters import Command
 
 from application.services.rag import RAGService
 from presentation.decorators import handle_errors
-
 
 logger = logging.getLogger(__name__)
 
@@ -24,4 +25,3 @@ async def cmd_rag_reindex(message: types.Message, rag_service: RAGService):
     except Exception as e:
         logger.exception("RAG reindex error")
         await msg.edit_text(f"⚠️ Ошибка перестройки: {e}")
-

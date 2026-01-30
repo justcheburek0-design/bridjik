@@ -1,23 +1,23 @@
 """Callback query handlers."""
 
 import logging
-from aiogram import types, Router
+
+from aiogram import Router, types
 from aiogram.filters import StateFilter
 
-from application.services.subscription import SubscriptionService
-from application.services.user import UserService
-from application.services.game import GameService
 from application.services.ai import AIService
+from application.services.game import GameService
 from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
-from domain.entities import User, Chat, MessageContext
+from application.services.subscription import SubscriptionService
+from application.services.user import UserService
+from domain.entities import Chat, MessageContext, User
 from domain.interfaces import IFreezesRepository
 from infrastructure.external.gemini import GeminiAPI
-from presentation.keyboards import KeyboardBuilder
-from presentation.formatters import Formatter
 from presentation.decorators import handle_errors
-
+from presentation.formatters import Formatter
+from presentation.keyboards import KeyboardBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +74,7 @@ async def callback_any(
             if message:
                 await message.edit_text(
                     Formatter.format_freeze_message(username, hours, is_active=True),
-                    reply_markup=keyboard_builder.freeze_keyboard(
-                        user_id, config.FREEZE_OPTIONS
-                    ),
+                    reply_markup=keyboard_builder.freeze_keyboard(user_id, config.FREEZE_OPTIONS),
                 )
         except Exception:
             logger.exception("freeze: failed to edit confirmation message")
@@ -146,9 +144,7 @@ async def callback_any(
                 user = user_service.create_user_from_telegram(query.from_user)
                 chat = Chat(
                     id=chat_id,
-                    type=str(getattr(message.chat, "type", "private"))
-                    if message
-                    else "private",
+                    type=str(getattr(message.chat, "type", "private")) if message else "private",
                 )
 
                 context = await MessageContext.create_with_rag(
@@ -170,9 +166,7 @@ async def callback_any(
                 logger.exception(f"game:guess_object failed: {e}")
                 try:
                     if message:
-                        await message.reply(
-                            "Не удалось запустить игру. Попробуйте ещё раз."
-                        )
+                        await message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
                 except Exception:
                     pass
             return

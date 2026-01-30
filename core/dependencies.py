@@ -2,29 +2,29 @@
 
 from pathlib import Path
 
-from core.config import Config
-from infrastructure.bot import create_bot, create_dispatcher
-from infrastructure.openai_client import create_openai_client
-from infrastructure.repositories.history import HistoryRepository
-from infrastructure.repositories.chat_logs import ChatLogsRepository
-from infrastructure.repositories.psevdos import PsevdoRepository
-from infrastructure.repositories.freezes import FreezesRepository
-from infrastructure.repositories.guesses import GuessesRepository
-from infrastructure.repositories.stickers import StickersRepository
-from infrastructure.external.mc_api import MinecraftAPI
-from infrastructure.external.mb_api import MineBridgeAPI
-from infrastructure.external.gemini import GeminiAPI
-from infrastructure.external.news_api import NewsAPI
-from infrastructure.external.tavily_api import TavilyAPI
-from application.services.subscription import SubscriptionService
-from application.services.user import UserService
-from application.services.game import GameService
 from application.services.ai import AIService
+from application.services.game import GameService
 from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
-from presentation.keyboards import KeyboardBuilder
+from application.services.subscription import SubscriptionService
+from application.services.user import UserService
+from core.config import Config
+from infrastructure.bot import create_bot, create_dispatcher
+from infrastructure.external.gemini import GeminiAPI
+from infrastructure.external.mb_api import MineBridgeAPI
+from infrastructure.external.mc_api import MinecraftAPI
+from infrastructure.external.news_api import NewsAPI
+from infrastructure.external.tavily_api import TavilyAPI
+from infrastructure.openai_client import create_openai_client
+from infrastructure.repositories.chat_logs import ChatLogsRepository
+from infrastructure.repositories.freezes import FreezesRepository
+from infrastructure.repositories.guesses import GuessesRepository
+from infrastructure.repositories.history import HistoryRepository
+from infrastructure.repositories.psevdos import PsevdoRepository
+from infrastructure.repositories.stickers import StickersRepository
 from presentation.formatters import Formatter
+from presentation.keyboards import KeyboardBuilder
 
 
 class Container:
@@ -44,9 +44,7 @@ class Container:
         )
 
         # Repositories
-        self.history_repo = HistoryRepository(
-            self.config.HISTORY_FILE, self.config.DM_MAX_MESSAGES
-        )
+        self.history_repo = HistoryRepository(self.config.HISTORY_FILE, self.config.DM_MAX_MESSAGES)
         self.chat_logs_repo = ChatLogsRepository(
             self.config.CHAT_LOGS_FILE, self.config.GROUP_MAX_MESSAGES
         )
@@ -84,6 +82,7 @@ class Container:
             self.config,
             self.stickers_repo,
             self.guesses_repo,
+            self.openai_client,
         )
         self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)
         self.strings_service = StringsService(self.config)

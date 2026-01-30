@@ -81,7 +81,7 @@ application/
 ├── services/
 │   ├── ai.py          # AI completion (OpenAI + Gemini)
 │   ├── rag.py         # RAG система для контекста
-│   ├── media.py       # Обработка медиа (фото, голос, стикеры)
+│   ├── media.py       # Обработка медиа (фото, генерация через AI, голос, стикеры)
 │   ├── game.py        # Игровые механики
 │   ├── subscription.py # Проверка подписок
 │   ├── user.py        # Управление пользователями
@@ -317,6 +317,36 @@ class Container:
 4. Presentation создаёт MessageContext с image_bytes
    ↓
 5. AIService обрабатывает через Gemini (поддержка vision)
+```
+
+### Генерация изображения через AI
+
+```
+1. AI генерирует ответ с placeholder [[gen_photo:описание]]
+   ↓
+2. MediaService.long_text() обнаруживает placeholder
+   ↓
+3. MediaService.generate_image_via_ai() вызывает OpenAI API
+   ↓
+4. Скачивает сгенерированное изображение
+   ↓
+5. Отправляет изображение пользователю через Telegram
+```
+
+### Поиск изображения из интернета
+
+```
+1. AI генерирует ответ с placeholder [[find_photo:запрос]]
+   ↓
+2. MediaService.long_text() обнаруживает placeholder
+   ↓
+3. MediaService._resolve_photo_payload() проверяет:
+   - Локальные файлы в photos/
+   - Поиск через Pixabay API
+   ↓
+4. Скачивает найденное изображение
+   ↓
+5. Отправляет пользователю через Telegram
 ```
 
 ## Зависимости между слоями

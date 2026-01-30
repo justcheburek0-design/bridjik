@@ -2,9 +2,9 @@
 
 import json
 import logging
-from pathlib import Path
-from typing import List, Tuple, Dict, Deque, Optional
 from collections import defaultdict, deque
+from pathlib import Path
+from typing import Deque, Dict, List, Optional, Tuple
 
 from domain.interfaces import IHistoryRepository
 from utils.text import shorten
@@ -25,9 +25,7 @@ class HistoryRepository(IHistoryRepository):
     def __init__(self, file_path: Path, max_messages: int = 15):
         self.file_path = file_path
         self.max_messages = max_messages
-        self._history: Dict[str, Deque[dict]] = defaultdict(
-            lambda: deque(maxlen=max_messages)
-        )
+        self._history: Dict[str, Deque[dict]] = defaultdict(lambda: deque(maxlen=max_messages))
         self._load()
 
     def _make_key(self, chat_id: int, user_id: int) -> str:

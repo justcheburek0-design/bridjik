@@ -2,9 +2,9 @@
 
 import json
 import logging
-from pathlib import Path
-from typing import List, Tuple, Dict, Deque, Optional
 from collections import defaultdict, deque
+from pathlib import Path
+from typing import Deque, Dict, List, Optional, Tuple
 
 from domain.interfaces import IChatLogsRepository
 from utils.text import shorten
@@ -16,8 +16,8 @@ class ChatLogsRepository(IChatLogsRepository):
     def __init__(self, file_path: Path, max_messages: int = 12):
         self.file_path = file_path
         self.max_messages = max_messages
-        self._logs: Dict[int, Deque[Tuple[Optional[int], str, bool, str]]] = (
-            defaultdict(lambda: deque(maxlen=max_messages))
+        self._logs: Dict[int, Deque[Tuple[Optional[int], str, bool, str]]] = defaultdict(
+            lambda: deque(maxlen=max_messages)
         )
         self._load()
 
@@ -34,9 +34,7 @@ class ChatLogsRepository(IChatLogsRepository):
                 except Exception:
                     continue
 
-                dq: Deque[Tuple[Optional[int], str, bool, str]] = deque(
-                    maxlen=self.max_messages
-                )
+                dq: Deque[Tuple[Optional[int], str, bool, str]] = deque(maxlen=self.max_messages)
                 for row in items:
                     try:
                         # Skip if it's history format (dict)
@@ -50,12 +48,8 @@ class ChatLogsRepository(IChatLogsRepository):
                         else:
                             # New format: [message_id, author, is_bot, msg]
                             message_id, author, is_bot, msg = row
-                            message_id = (
-                                int(message_id) if message_id is not None else None
-                            )
-                        dq.append(
-                            (message_id, str(author), bool(is_bot), shorten(str(msg)))
-                        )
+                            message_id = int(message_id) if message_id is not None else None
+                        dq.append((message_id, str(author), bool(is_bot), shorten(str(msg))))
                     except Exception:
                         continue
                 if dq:
@@ -99,9 +93,7 @@ class ChatLogsRepository(IChatLogsRepository):
         messages = list(self._logs.get(chat_id, deque()))
         return messages[-limit:] if limit else messages
 
-    def get_message_by_id(
-        self, chat_id: int, message_id: int
-    ) -> Optional[Tuple[str, bool, str]]:
+    def get_message_by_id(self, chat_id: int, message_id: int) -> Optional[Tuple[str, bool, str]]:
         """Get message by message_id.
 
         Args:

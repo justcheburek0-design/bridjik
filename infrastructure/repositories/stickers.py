@@ -1,4 +1,5 @@
 """Stickers repository."""
+
 import json
 import logging
 from pathlib import Path
@@ -70,12 +71,12 @@ class StickersRepository:
             new_stickers = json.loads(json_content)
             if not isinstance(new_stickers, dict):
                 return False
-            
+
             # Validate that values are strings (file_ids)
             for k, v in new_stickers.items():
                 if not isinstance(k, str) or not isinstance(v, str):
                     return False
-            
+
             self._stickers = new_stickers
             self._save_stickers()
             return True

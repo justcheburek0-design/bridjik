@@ -1,7 +1,8 @@
 """Тесты для utils/text.py."""
 
 import pytest
-from utils.text import shorten, truncate_text, hash_text, get_hour_string
+
+from utils.text import get_hour_string, hash_text, shorten, truncate_text
 
 
 class TestShorten:

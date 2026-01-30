@@ -1,33 +1,33 @@
 """Media handling service."""
 
-import logging
-import re
 import asyncio
+import logging
 import mimetypes
-import uuid
 import random
+import re
+import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, Union
-from urllib.parse import urlparse, unquote
-from aiogram import types, Bot
-from aiogram.types import FSInputFile, BufferedInputFile
-from aiogram.exceptions import TelegramBadRequest
+from urllib.parse import unquote, urlparse
+
 import httpx
+from aiogram import Bot, types
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import BufferedInputFile, FSInputFile
 from PIL import Image
-from io import BytesIO
 
 from core.config import Config
 from domain.interfaces import IGuessesRepository
 from infrastructure.repositories.stickers import StickersRepository
 from utils.markdown_to_html import markdown_to_telegram_html
 
-
 logger = logging.getLogger(__name__)
 
 
 # Media tag regex
 MEDIA_TAG_RE = re.compile(
-    r"\[\[(photo|sticker|kb|guess|voice):([^\]]+)\]\]", re.IGNORECASE
+    r"\[\[(find_photo|gen_photo|sticker|kb|guess|voice):([^\]]+)\]\]", re.IGNORECASE
 )
 
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
@@ -52,16 +52,16 @@ class MediaService:
         config: Config,
         stickers_repo: StickersRepository,
         guesses_repo: Optional[IGuessesRepository] = None,
+        openai_client=None,
     ):
         self.bot = bot
         self.bot_token = bot_token
         self.config = config
         self.stickers_repo = stickers_repo
         self.guesses_repo = guesses_repo
+        self.openai_client = openai_client
 
-    async def download_image(
-        self, message: types.Message
-    ) -> Optional[tuple[bytes, str]]:
+    async def download_image(self, message: types.Message) -> Optional[tuple[bytes, str]]:
         """Download image from message. Returns (bytes, mime_type) or None."""
         try:
             if message.photo:
@@ -88,9 +88,7 @@ class MediaService:
             logger.exception("Failed to download image")
             return None
 
-    async def download_voice(
-        self, message: types.Message
-    ) -> Optional[tuple[bytes, str]]:
+    async def download_voice(self, message: types.Message) -> Optional[tuple[bytes, str]]:
         """Download voice from message. Returns (bytes, mime_type) or None."""
         try:
             if not message.voice:
@@ -114,9 +112,7 @@ class MediaService:
             logger.exception("Failed to download voice")
             return None
 
-    async def download_sticker(
-        self, message: types.Message
-    ) -> Optional[tuple[bytes, str]]:
+    async def download_sticker(self, message: types.Message) -> Optional[tuple[bytes, str]]:
         """Download sticker from message. Returns (bytes, mime_type) or None."""
         try:
             if not message.sticker:
@@ -144,9 +140,7 @@ class MediaService:
 
                 # Handle video stickers by extracting first frame
                 if is_video:
-                    logger.info(
-                        "Converting video sticker to image (extracting first frame)"
-                    )
+                    logger.info("Converting video sticker to image (extracting first frame)")
                     extracted = await self._extract_video_sticker_frame(content)
                     if extracted:
                         return (extracted, "image/png")
@@ -182,9 +176,7 @@ class MediaService:
             logger.exception("Failed to download sticker")
             return None
 
-    async def download_animation(
-        self, message: types.Message
-    ) -> Optional[tuple[bytes, str]]:
+    async def download_animation(self, message: types.Message) -> Optional[tuple[bytes, str]]:
         """Download animation/GIF from message. Returns (bytes, mime_type) or None."""
         try:
             if not message.animation:
@@ -216,9 +208,7 @@ class MediaService:
                     return None
                 elif mime.startswith("video/"):
                     # For video files (MP4, WebM, etc.), try to extract first frame
-                    logger.info(
-                        "Attempting to extract first frame from video animation"
-                    )
+                    logger.info("Attempting to extract first frame from video animation")
                     extracted = await self._extract_video_sticker_frame(content)
                     if extracted:
                         return (extracted, "image/png")
@@ -345,24 +335,18 @@ class MediaService:
             return ".jpg"
         return ext
 
-    def _build_image_filename(
-        self, query: str, url: str, content_type: Optional[str]
-    ) -> str:
+    def _build_image_filename(self, query: str, url: str, content_type: Optional[str]) -> str:
         """Build safe filename for saving image."""
         ext = self._guess_image_extension(url, content_type)
         base = re.sub(r"[^a-z0-9_-]+", "_", (query or "image").strip().lower())
         base = base.strip("_") or "image"
         return f"{base}_{uuid.uuid4().hex[:8]}{ext}"
 
-    async def _fetch_pixabay_hits(
-        self, client: httpx.AsyncClient, query: str
-    ) -> list[dict]:
+    async def _fetch_pixabay_hits(self, client: httpx.AsyncClient, query: str) -> list[dict]:
         """Request search results from Pixabay by query."""
         api_key = (self.config.PIXABAY_API_KEY or "").strip()
         if not api_key:
-            logger.warning(
-                "image search skipped for %s: missing PIXABAY_API_KEY", query
-            )
+            logger.warning("image search skipped for %s: missing PIXABAY_API_KEY", query)
             return []
 
         params = {
@@ -440,9 +424,7 @@ class MediaService:
                             except (TypeError, ValueError):
                                 pass
                         try:
-                            img_resp = await client.get(
-                                image_url, headers=_IMAGE_HEADERS
-                            )
+                            img_resp = await client.get(image_url, headers=_IMAGE_HEADERS)
                             img_resp.raise_for_status()
                             content = img_resp.content
                             if not content:
@@ -472,6 +454,136 @@ class MediaService:
             logger.exception("image search failed for query: %s", q)
         return None
 
+    async def generate_image_via_ai(self, prompt: str) -> Optional[BufferedInputFile]:
+        """Generate image using AI model from IMAGE_MODEL config.
+
+        Args:
+            prompt: Text description of the image to generate
+
+        Returns:
+            BufferedInputFile with generated image or None on error
+        """
+        if not prompt or not prompt.strip():
+            logger.warning("Empty prompt provided for image generation")
+            return None
+
+        if not self.openai_client:
+            logger.error("OpenAI client not available for image generation")
+            return None
+
+        try:
+            logger.info(f"Generating image with prompt: {prompt[:100]}")
+
+            # Use chat completions for OpenRouter compatibility
+            # According to OpenRouter docs, modalities should be a top-level parameter
+            response = await self.openai_client.chat.completions.create(
+                model=self.config.IMAGE_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt.strip(),
+                    }
+                ],
+            )
+
+            if not response.choices or len(response.choices) == 0:
+                logger.error("No choices returned from AI")
+                return None
+
+            # Extract image from response
+            message = response.choices[0].message
+
+            # Check if message has images attribute
+            image_bytes = None
+
+            # Method 1: Check for images attribute (OpenRouter returns list of dicts)
+            if hasattr(message, "images") and message.images:
+                logger.info(f"Found images attribute with {len(message.images)} image(s)")
+                image_data = message.images[0]  # This is a dict, not an object!
+
+                # Access as dictionary
+                if isinstance(image_data, dict) and "image_url" in image_data:
+                    image_url_dict = image_data["image_url"]
+                    if isinstance(image_url_dict, dict) and "url" in image_url_dict:
+                        image_url = image_url_dict["url"]
+
+                        # Check if it's base64 data URL
+                        if image_url.startswith("data:"):
+                            logger.info("Converting base64 data URL to bytes")
+                            import base64
+
+                            try:
+                                # Format: data:image/jpeg;base64,<base64_data>
+                                base64_data = image_url.split(",", 1)[1]
+                                image_bytes = base64.b64decode(base64_data)
+                                logger.info(
+                                    f"Successfully decoded base64, size: {len(image_bytes)} bytes"
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to decode base64: {e}")
+                                return None
+                        else:
+                            # Regular URL - download
+                            logger.info(f"Downloading from URL: {image_url[:100]}")
+                            async with httpx.AsyncClient(timeout=_IMAGE_TIMEOUT) as client:
+                                img_resp = await client.get(image_url)
+                                img_resp.raise_for_status()
+                                image_bytes = img_resp.content
+                    else:
+                        logger.error(f"Unexpected image_url structure: {image_url_dict}")
+                        return None
+                else:
+                    logger.error(f"Unexpected image_data structure: {type(image_data)}")
+                    return None
+
+            # Method 2: Check content for markdown with URL or base64
+            elif message.content:
+                logger.info("Trying to extract from message.content")
+
+                # Try markdown format first
+                markdown_pattern = r"!\[.*?\]\((data:image/[^;]+;base64,[^\)]+)\)"
+                matches = re.findall(markdown_pattern, message.content)
+
+                if matches:
+                    logger.info("Found base64 in markdown format")
+                    import base64
+
+                    try:
+                        base64_data = matches[0].split(",", 1)[1]
+                        image_bytes = base64.b64decode(base64_data)
+                    except Exception as e:
+                        logger.error(f"Failed to decode base64 from markdown: {e}")
+                        return None
+                else:
+                    # Try to find URL in markdown
+                    url_markdown_pattern = r"!\[.*?\]\((https?://[^\)]+)\)"
+                    url_matches = re.findall(url_markdown_pattern, message.content)
+
+                    if url_matches:
+                        image_url = url_matches[0]
+                        logger.info(f"Found URL in markdown: {image_url[:100]}")
+                        async with httpx.AsyncClient(timeout=_IMAGE_TIMEOUT) as client:
+                            img_resp = await client.get(image_url)
+                            img_resp.raise_for_status()
+                            image_bytes = img_resp.content
+
+            if not image_bytes:
+                logger.error("Could not extract image from response")
+                logger.info(f"Message has images attr: {hasattr(message, 'images')}")
+                logger.info(
+                    f"Message content preview: {str(message.content)[:200] if message.content else 'None'}"
+                )
+                return None
+
+            # Return as BufferedInputFile
+            filename = f"generated_{uuid.uuid4().hex[:8]}.png"
+            logger.info(f"Image extraction successful, size: {len(image_bytes)} bytes")
+            return BufferedInputFile(image_bytes, filename=filename)
+
+        except Exception as exc:
+            logger.exception(f"Failed to generate image: {exc}")
+            return None
+
     async def _resolve_photo_payload(
         self, payload: str
     ) -> Optional[Union[str, FSInputFile, BufferedInputFile]]:
@@ -486,9 +598,7 @@ class MediaService:
             return FSInputFile(str(path))
         return await self._search_image_online(target)
 
-    async def _resolve_sticker_payload(
-        self, payload: str, chat_id: int
-    ) -> Optional[str]:
+    async def _resolve_sticker_payload(self, payload: str, chat_id: int) -> Optional[str]:
         """Resolve sticker payload: last/alias/file_id -> file_id."""
         p = (payload or "").strip()
         if not p:
@@ -501,9 +611,7 @@ class MediaService:
 
         return p
 
-    def _parse_keyboard_payload(
-        self, payload: str
-    ) -> Optional[types.InlineKeyboardMarkup]:
+    def _parse_keyboard_payload(self, payload: str) -> Optional[types.InlineKeyboardMarkup]:
         """Parse [[kb:...]] payload into InlineKeyboardMarkup."""
         s = (payload or "").strip()
         if not s:
@@ -554,8 +662,10 @@ class MediaService:
                 actions.append(("text", text[pos : m.start()]))
             kind = m.group(1).lower()
             payload = m.group(2)
-            if kind == "photo":
-                actions.append(("photo", payload))
+            if kind == "find_photo":
+                actions.append(("find_photo", payload))
+            elif kind == "gen_photo":
+                actions.append(("gen_photo", payload))
             elif kind == "sticker":
                 actions.append(("sticker", payload))
             elif kind == "kb":
@@ -587,12 +697,8 @@ class MediaService:
                 except TelegramBadRequest as e:
                     s_e = str(e)
                     if "can't parse entities" in s_e:
-                        logger.warning(
-                            "HTML parse error in edit, retrying with plain text"
-                        )
-                        return await msg.edit_text(
-                            text, reply_markup=reply_markup, parse_mode=None
-                        )
+                        logger.warning("HTML parse error in edit, retrying with plain text")
+                        return await msg.edit_text(text, reply_markup=reply_markup, parse_mode=None)
                     if "message is not modified" in s_e:
                         return msg
                     raise
@@ -602,9 +708,7 @@ class MediaService:
                     return await user_msg.answer(text, reply_markup=reply_markup)
                 except TelegramBadRequest as e:
                     if "can't parse entities" in str(e):
-                        logger.warning(
-                            "HTML parse error in answer, retrying with plain text"
-                        )
+                        logger.warning("HTML parse error in answer, retrying with plain text")
                         return await user_msg.answer(
                             text, reply_markup=reply_markup, parse_mode=None
                         )
@@ -613,9 +717,7 @@ class MediaService:
             if first_edit:
                 try:
                     if pending_kb is not None:
-                        last_text_msg = await safe_edit(
-                            parts[0], reply_markup=pending_kb
-                        )
+                        last_text_msg = await safe_edit(parts[0], reply_markup=pending_kb)
                         pending_kb = None
                     else:
                         last_text_msg = await safe_edit(parts[0])
@@ -628,9 +730,7 @@ class MediaService:
                         last_text_msg = await safe_answer(parts[0])
                         if pending_kb is not None:
                             try:
-                                await last_text_msg.edit_reply_markup(
-                                    reply_markup=pending_kb
-                                )
+                                await last_text_msg.edit_reply_markup(reply_markup=pending_kb)
                             except Exception:
                                 logger.exception(
                                     "failed to set pending keyboard on fallback message"
@@ -664,7 +764,7 @@ class MediaService:
                 await send_text_blocks(payload, first_edit=first_text_pending)
                 if first_text_pending and payload.strip():
                     first_text_pending = False
-            elif kind == "photo":
+            elif kind == "find_photo":
                 photo_arg = await self._resolve_photo_payload(payload)
                 if photo_arg is None:
                     logger.warning("photo not found or unsupported: %s", payload)
@@ -675,10 +775,19 @@ class MediaService:
                         sent_messages.append((m.message_id, "[Изображение]"))
                 except Exception:
                     logger.exception("failed to send photo: %s", payload)
+            elif kind == "gen_photo":
+                photo_arg = await self.generate_image_via_ai(payload)
+                if photo_arg is None:
+                    logger.warning("image generation failed: %s", payload)
+                    continue
+                try:
+                    m = await user_msg.answer_photo(photo=photo_arg)
+                    if m:
+                        sent_messages.append((m.message_id, "[Сгенерированное изображение]"))
+                except Exception:
+                    logger.exception("failed to send generated photo: %s", payload)
             elif kind == "sticker":
-                sticker_id = await self._resolve_sticker_payload(
-                    payload, user_msg.chat.id
-                )
+                sticker_id = await self._resolve_sticker_payload(payload, user_msg.chat.id)
                 if not sticker_id:
                     logger.warning("sticker not found or unsupported: %s", payload)
                     continue
@@ -720,9 +829,7 @@ class MediaService:
                             voice_bytes = await tts_callback(voice_text)
                             if voice_bytes:
                                 m = await user_msg.answer_voice(
-                                    voice=BufferedInputFile(
-                                        voice_bytes, filename="voice.mp3"
-                                    ),
+                                    voice=BufferedInputFile(voice_bytes, filename="voice.mp3"),
                                     caption=None,
                                 )
                                 if m:
@@ -743,9 +850,9 @@ class MediaService:
     async def _extract_video_sticker_frame(self, video_bytes: bytes) -> Optional[bytes]:
         """Extract first frame from video sticker."""
         try:
+            import shutil
             import subprocess
             import tempfile
-            import shutil
 
             # Check if ffmpeg is available
             ffmpeg_path = shutil.which("ffmpeg")
@@ -758,18 +865,14 @@ class MediaService:
                         rgb_img = Image.new("RGB", img.size, (255, 255, 255))
                         if img.mode == "P":
                             img = img.convert("RGBA")
-                        rgb_img.paste(
-                            img, mask=img.split()[-1] if img.mode == "RGBA" else None
-                        )
+                        rgb_img.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
                         img = rgb_img
 
                     output = BytesIO()
                     img.save(output, format="PNG")
                     return output.getvalue()
                 except Exception:
-                    logger.debug(
-                        "PIL extraction failed, video format not directly supported"
-                    )
+                    logger.debug("PIL extraction failed, video format not directly supported")
                     return None
 
             # Use ffmpeg to extract first frame
@@ -864,9 +967,7 @@ class MediaService:
                 try:
                     from rlottie import LottieAnimation  # noqa: F811
 
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".json", delete=False
-                    ) as tmp_json:
+                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_json:
                         tmp_json.write(decompressed)
                         tmp_json_path = tmp_json.name
 
@@ -876,9 +977,7 @@ class MediaService:
                         width, height = animation.size()
 
                         if width <= 0 or height <= 0:
-                            logger.warning(
-                                "Invalid animation size: %dx%d", width, height
-                            )
+                            logger.warning("Invalid animation size: %dx%d", width, height)
                             return None
 
                         # Render first frame to PNG
@@ -924,9 +1023,7 @@ class MediaService:
 
                 output = BytesIO()
                 img.save(output, format="PNG")
-                logger.info(
-                    "Created placeholder PNG for TGS sticker (%dx%d)", width, height
-                )
+                logger.info("Created placeholder PNG for TGS sticker (%dx%d)", width, height)
                 return output.getvalue()
             except Exception as exc:
                 logger.warning("Failed to create TGS placeholder: %s", exc)

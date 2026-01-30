@@ -1,11 +1,12 @@
 """Базовые фикстуры для pytest."""
 
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from core.config import Config
-from domain.entities import User, Chat, MessageContext
+from domain.entities import Chat, MessageContext, User
 
 
 @pytest.fixture

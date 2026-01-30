@@ -1,34 +1,34 @@
 """AI service for completions."""
 
-import logging
 import base64
 import json
-from typing import Optional, List, Tuple, Any, Callable, Awaitable
-from openai import AsyncOpenAI, RateLimitError, APIError
+import logging
+import tempfile
+from pathlib import Path
+from typing import Any, Awaitable, Callable, List, Optional, Tuple
+
+import httpx
 from aiogram import types
+from openai import APIError, AsyncOpenAI, RateLimitError
 
 from core.config import Config
-
 from domain.entities import MessageContext
-from domain.interfaces import IHistoryRepository, IChatLogsRepository
-from infrastructure.external.mc_api import MinecraftAPI
+from domain.interfaces import IChatLogsRepository, IHistoryRepository
 from infrastructure.external.mb_api import MineBridgeAPI
-from utils.html_edit import remove as remove_html
-from utils.message import get_message_text, get_reply_quote
+from infrastructure.external.mc_api import MinecraftAPI
 from utils.chat_helpers import (
-    is_group_chat,
     get_author_name,
     get_message_id,
     get_replied_message_id,
     is_bot_message,
+    is_group_chat,
 )
+from utils.html_edit import remove as remove_html
+from utils.message import get_message_text, get_reply_quote
 from utils.message_formatter import (
     format_chat_history_entry,
     format_chat_log_entry,
 )
-import httpx
-import tempfile
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +102,7 @@ class AIService:
                         try:
                             await on_tool_update(response_message.content)
                         except Exception:
-                            logger.warning(
-                                "Failed to update tool status", exc_info=True
-                            )
+                            logger.warning("Failed to update tool status", exc_info=True)
 
                     # Execute tools
                     for tool_call in response_message.tool_calls:
@@ -123,9 +121,7 @@ class AIService:
             return DEFAULT_ERROR_MESSAGE
 
         except (RateLimitError, APIError) as e:
-            logger.error(
-                "OpenAI completion rate limit/API error: %s", str(e), exc_info=True
-            )
+            logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
             return DEFAULT_ERROR_MESSAGE
 
     def _get_tools(self) -> List[dict]:
@@ -193,9 +189,7 @@ class AIService:
             elif name == "web_search":
                 query = args.get("query")
                 max_results = min(args.get("max_results", 5), 10)
-                search_data = await self.tavily_api.search(
-                    query, max_results=max_results
-                )
+                search_data = await self.tavily_api.search(query, max_results=max_results)
                 if search_data:
                     content = self.tavily_api.format_results(search_data)
                 else:
@@ -388,9 +382,7 @@ class AIService:
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": self._make_data_url(
-                            context.image_bytes, context.mime_type
-                        )
+                        "url": self._make_data_url(context.image_bytes, context.mime_type)
                     },
                 },
             ]
@@ -404,9 +396,7 @@ class AIService:
 
         return messages
 
-    async def _call_openai(
-        self, messages: List[dict], tools: Optional[List[dict]] = None
-    ) -> dict:
+    async def _call_openai(self, messages: List[dict], tools: Optional[List[dict]] = None) -> dict:
         """Call OpenAI API."""
         kwargs = {
             "model": self.model,
@@ -478,9 +468,7 @@ class AIService:
 
         return json.dumps(structured_data, ensure_ascii=False, indent=2)
 
-    def _make_data_url(
-        self, image_bytes: bytes, mime_type: Optional[str] = None
-    ) -> str:
+    def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
         """Create data URL for image."""
         mt = (mime_type or "image/jpeg").strip().lower()
         if not mt.startswith("image/"):
@@ -551,9 +539,7 @@ class AIService:
 
         # If text is empty or placeholder, try to fetch from logs
         if not text or text == "(пусто)":
-            log_msg = self.chat_logs_repo.get_message_by_id(
-                message.chat.id, replied_msg_id
-            )
+            log_msg = self.chat_logs_repo.get_message_by_id(message.chat.id, replied_msg_id)
             if log_msg:
                 _, _, log_text = log_msg
                 if log_text:

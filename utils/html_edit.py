@@ -1,20 +1,18 @@
 """HTML sanitization utilities."""
-import re
+
 import html
+import re
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
-
-ALLOWED_TAGS = {
-    "a", "b", "strong", "i", "em", "code", "s", "strike", "del", "u", "pre"
-}
+ALLOWED_TAGS = {"a", "b", "strong", "i", "em", "code", "s", "strike", "del", "u", "pre"}
 
 SAFE_SCHEMES = {"http", "https"}
 
 
 class WhitelistHTMLSanitizer(HTMLParser):
     """HTML sanitizer that only allows Telegram-compatible tags."""
-    
+
     def __init__(self):
         super().__init__(convert_charrefs=False)
         self.out = []
@@ -50,14 +48,14 @@ class WhitelistHTMLSanitizer(HTMLParser):
 
     def handle_endtag(self, tag):
         tag = tag.lower()
-        
+
         # Find tag in stack (reverse search)
         index = -1
         for i in range(len(self.tag_stack) - 1, -1, -1):
             if self.tag_stack[i] == tag:
                 index = i
                 break
-        
+
         if index != -1:
             # Close all tags up to the found tag
             while len(self.tag_stack) > index:
@@ -92,7 +90,9 @@ def _is_safe_href(url: str) -> bool:
     """Check if URL is safe (http/https or relative)."""
     try:
         p = urlparse(url)
-        return (p.scheme == "" and p.netloc == "" and url.startswith(("/", "#"))) or (p.scheme in SAFE_SCHEMES)
+        return (p.scheme == "" and p.netloc == "" and url.startswith(("/", "#"))) or (
+            p.scheme in SAFE_SCHEMES
+        )
     except Exception:
         return False
 
@@ -101,11 +101,10 @@ def remove(text: str) -> str:
     """Remove unsafe tags and normalize HTML formatting."""
     if not text:
         return ""
-    
+
     text = html.unescape(text)
     parser = WhitelistHTMLSanitizer()
     parser.feed(text)
     sanitized = parser.get_html()
-    
-    return sanitized.strip()
 
+    return sanitized.strip()

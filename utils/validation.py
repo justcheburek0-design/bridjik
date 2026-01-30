@@ -4,7 +4,7 @@
 ID, строк, атрибутов объектов и контекста сообщений.
 """
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 
 def is_valid_id(value: Any) -> bool:

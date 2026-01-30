@@ -1,17 +1,16 @@
 """Main entry point for the bot."""
+
 import asyncio
 import logging
 import signal
 import sys
 
 from core.dependencies import Container
-from presentation.handlers.commands import start, user, info, server, game, admin
-from presentation.handlers import messages, callbacks, admin_stickers
-
+from presentation.handlers import admin_stickers, callbacks, messages
+from presentation.handlers.commands import admin, game, info, server, start, user
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -23,11 +22,11 @@ def _handle_signal(signum, frame):
     """Handle SIGTERM and SIGINT signals for immediate shutdown."""
     sig_name = signal.Signals(signum).name
     logger.warning(f"Received {sig_name} signal, initiating immediate shutdown...")
-    
+
     # Set the shutdown event if it exists
     if _shutdown_event:
         _shutdown_event.set()
-    
+
     # Exit immediately
     sys.exit(0)
 
@@ -37,11 +36,11 @@ async def on_startup(container: Container):
     try:
         me = await container.bot.get_me()
         logger.info(f"Bot started: @{me.username or 'unknown'}")
-        
+
         # Update config with actual bot username
         if me.username:
             container.config.BOT_USERNAME = me.username
-        
+
         # Log bot restart to chat logs for all known chats
         restart_message = f"🔄 Бот перезагружен (версия {container.config.VERSION})"
         for chat_id in container.chat_logs_repo._logs.keys():
@@ -50,12 +49,12 @@ async def on_startup(container: Container):
                 author="System",
                 is_bot=True,
                 text=restart_message,
-                message_id=None  # System message doesn't have Telegram message_id
+                message_id=None,  # System message doesn't have Telegram message_id
             )
         logger.info(f"Logged restart notification to {len(container.chat_logs_repo._logs)} chats")
     except Exception:
         logger.exception("Failed to get bot info on startup")
-    
+
     # Initialize RAG index
     try:
         logger.info("Initializing RAG index...")
@@ -69,7 +68,7 @@ async def on_startup(container: Container):
 async def on_shutdown(container: Container):
     """Execute on bot shutdown."""
     logger.info("Shutting down bot...")
-    
+
     try:
         # Close OpenAI client with timeout
         aclose = getattr(container.openai_client, "aclose", None)
@@ -84,7 +83,7 @@ async def on_shutdown(container: Container):
                 logger.warning("OpenAI client close timeout")
     except Exception:
         logger.exception("Error closing openai client")
-    
+
     try:
         # Close bot session with timeout
         await asyncio.wait_for(container.bot.session.close(), timeout=2.0)
@@ -93,7 +92,7 @@ async def on_shutdown(container: Container):
         logger.warning("Bot session close timeout")
     except Exception:
         logger.exception("Error closing bot session")
-    
+
     logger.info("Bot shutdown complete")
 
 
@@ -101,7 +100,7 @@ def register_handlers(container: Container):
     """Register all handlers with dependency injection."""
     dp = container.dispatcher
     deps = container.get_handler_dependencies()
-    
+
     # Register routers with dependencies
     # Commands
     dp.include_router(start.router)
@@ -111,31 +110,31 @@ def register_handlers(container: Container):
     dp.include_router(game.router)
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
-    
+
     # Messages and callbacks
     dp.include_router(callbacks.router)
     dp.include_router(messages.router)  # Messages router should be last
-    
+
     # Inject dependencies into all routers
     for key, value in deps.items():
         dp[key] = value
-    
+
     logger.info("All handlers registered")
 
 
 async def main():
     """Main function."""
     logger.info("Starting MineBridge bot...")
-    
+
     # Initialize container
     container = Container()
-    
+
     # Register handlers
     register_handlers(container)
-    
+
     # Startup
     await on_startup(container)
-    
+
     try:
         # Start polling
         await container.dispatcher.start_polling(container.bot)
@@ -152,11 +151,10 @@ if __name__ == "__main__":
         # Set signal handlers
         signal.signal(signal.SIGTERM, _handle_signal)
         signal.signal(signal.SIGINT, _handle_signal)
-        
+
         # Set the global shutdown event
         _shutdown_event = asyncio.Event()
-        
+
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Shutdown complete")
-

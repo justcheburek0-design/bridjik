@@ -3,35 +3,35 @@
 import logging
 import re
 from typing import Optional, Tuple
-from aiogram import types, Router
+
+from aiogram import Router, types
 from aiogram.enums import ChatType
 
-from application.services.subscription import SubscriptionService
-from application.services.user import UserService
 from application.services.ai import AIService
 from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
+from application.services.subscription import SubscriptionService
+from application.services.user import UserService
 from domain.entities import Chat, MessageContext
 from domain.interfaces import (
-    IFreezesRepository,
     IChatLogsRepository,
+    IFreezesRepository,
     IHistoryRepository,
 )
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
 from utils.chat_helpers import (
-    is_group_chat,
     get_author_name,
     get_message_id,
-    is_bot_message,
     get_replied_message_id,
+    is_bot_message,
+    is_group_chat,
 )
-from utils.message_formatter import combine_text_and_media, build_message_text_for_save
-from utils.message import get_reply_quote
 from utils.error_handlers import safe_execute_async
+from utils.message import get_reply_quote
+from utils.message_formatter import build_message_text_for_save, combine_text_and_media
 from utils.text import truncate_text
-
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +60,8 @@ STATUS_STICKER = "🎨 <b>Распознаю стикер...</b>"
 STATUS_ANIMATION = "🎬 <b>Распознаю гифку...</b>"
 STATUS_IMAGE = "🖼️ <b>Распознаю изображение...</b>"
 STATUS_VOICE = "🎙️ <b>Распознаю голосовое...</b>"
-ERROR_MESSAGE = (
-    "Извини, не смог сформулировать ответ. Попробуй переформулировать вопрос."
-)
-SUBSCRIPTION_REQUIRED = (
-    "Подпишитесь на @MineBridgeOfficial, чтобы пользоваться бриджиком"
-)
+ERROR_MESSAGE = "Извини, не смог сформулировать ответ. Попробуй переформулировать вопрос."
+SUBSCRIPTION_REQUIRED = "Подпишитесь на @MineBridgeOfficial, чтобы пользоваться бриджиком"
 
 
 def _get_message_text(message: types.Message) -> str:
@@ -77,9 +73,7 @@ def _get_message_text(message: types.Message) -> str:
     Returns:
         Text content or empty string
     """
-    return (
-        getattr(message, "text", None) or getattr(message, "caption", None) or ""
-    ).strip()
+    return (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
 
 
 def _has_image(message: types.Message) -> Tuple[bool, bool, bool, bool, bool]:
@@ -193,10 +187,7 @@ def _should_answer(message: types.Message, bot_username: str) -> bool:
         for entity in message.entities:
             if entity.type == "mention":
                 mention_text = text[entity.offset : entity.offset + entity.length]
-                if (
-                    bot_username
-                    and mention_text.lstrip("@").lower() == bot_username.lower()
-                ):
+                if bot_username and mention_text.lstrip("@").lower() == bot_username.lower():
                     return True
 
     # Check bot address keywords
@@ -253,9 +244,7 @@ def _save_incoming_message(
         else:
             # Get text of replied message
             replied_text = (
-                getattr(replied_msg, "text", None)
-                or getattr(replied_msg, "caption", None)
-                or ""
+                getattr(replied_msg, "text", None) or getattr(replied_msg, "caption", None) or ""
             ).strip()
             # Truncate if too long
             if len(replied_text) > 50:
@@ -289,17 +278,13 @@ async def auto_reply(
 ):
     """Auto-reply with AI."""
     prompt = _get_message_text(message)
-    has_image, has_photo, has_image_doc, has_sticker, has_animation = _has_image(
-        message
-    )
+    has_image, has_photo, has_image_doc, has_sticker, has_animation = _has_image(message)
     has_voice = bool(getattr(message, "voice", None))
     user_id = getattr(message.from_user, "id", None)
 
     # Voice transcription
     if has_voice:
-        transcribed = await _handle_voice_transcription(
-            message, media_service, gemini_api
-        )
+        transcribed = await _handle_voice_transcription(message, media_service, gemini_api)
         if transcribed:
             prompt = transcribed
 
@@ -400,9 +385,7 @@ async def auto_reply(
         chat_id = message.chat.id
         if sent_messages:
             for msg_id, msg_text in sent_messages:
-                chat_logs_repo.add_message(
-                    chat_id, "Ассистент", True, msg_text, message_id=msg_id
-                )
+                chat_logs_repo.add_message(chat_id, "Ассистент", True, msg_text, message_id=msg_id)
         else:
             # Fallback if no messages were captured (should not happen if answer is not empty)
             chat_logs_repo.add_message(chat_id, "Ассистент", True, answer)

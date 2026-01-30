@@ -1,10 +1,12 @@
 """Admin handlers for sticker management."""
+
 import logging
-from aiogram import Router, types, F, Bot
-from aiogram.types import FSInputFile
+
+from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import FSInputFile
 
 from core.config import Config
 from infrastructure.repositories.stickers import StickersRepository
@@ -24,31 +26,45 @@ class StickerStates(StatesGroup):
 @router.message(Command("stickers"))
 async def list_stickers(message: types.Message, config: Config, stickers_repo: StickersRepository):
     """List all stickers with management buttons."""
-    
+
     if message.from_user.id not in config.ADMIN_IDS:
         return
 
     stickers = stickers_repo.get_all_stickers()
-    
+
     if not stickers:
         await message.answer(
             "Список стикеров пуст.",
-            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="➕ Добавить стикер", callback_data="add_sticker")],
-                [types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
-            ])
+            reply_markup=types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        types.InlineKeyboardButton(
+                            text="➕ Добавить стикер", callback_data="add_sticker"
+                        )
+                    ],
+                    [
+                        types.InlineKeyboardButton(
+                            text="🔄 Восстановить", callback_data="sticker_restore"
+                        )
+                    ],
+                ]
+            ),
         )
         return
-    
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
-        [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
-        [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
-        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
-        [types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
-         types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
-    ])
-    
+
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
+            [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
+            [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
+            [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
+            [
+                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
+                types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore"),
+            ],
+        ]
+    )
+
     await message.answer("<b>Управление стикерами</b>", reply_markup=kb)
 
 
@@ -56,37 +72,45 @@ async def list_stickers(message: types.Message, config: Config, stickers_repo: S
 async def show_sticker_list(callback: types.CallbackQuery, stickers_repo: StickersRepository):
     stickers = stickers_repo.get_all_stickers()
     if not stickers:
-        await callback.message.edit_text("Список стикеров пуст.", reply_markup=callback.message.reply_markup)
+        await callback.message.edit_text(
+            "Список стикеров пуст.", reply_markup=callback.message.reply_markup
+        )
         return
 
     text = "📋 <b>Список стикеров</b>\n\n"
     # Sort by name
     for name in sorted(stickers.keys()):
         text += f"• <code>{name}</code>\n"
-    
+
     # Split into chunks if too long
     if len(text) > 4000:
         # Simple truncation for now, or send as file
         text = text[:4000] + "\n...(truncated)"
-    
+
     # Add back button
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🔙 Назад", callback_data="sticker_menu")]
-    ])
-    
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="sticker_menu")]
+        ]
+    )
+
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
 
 @router.callback_query(F.data == "sticker_menu")
 async def back_to_menu(callback: types.CallbackQuery):
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
-        [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
-        [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
-        [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
-        [types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
-         types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore")]
-    ])
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="➕ Добавить", callback_data="sticker_add")],
+            [types.InlineKeyboardButton(text="✏️ Изменить", callback_data="sticker_edit_menu")],
+            [types.InlineKeyboardButton(text="❌ Удалить", callback_data="sticker_delete_menu")],
+            [types.InlineKeyboardButton(text="📋 Список", callback_data="sticker_list")],
+            [
+                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="sticker_backup"),
+                types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="sticker_restore"),
+            ],
+        ]
+    )
     await callback.message.edit_text("<b>Управление стикерами</b>", reply_markup=kb)
 
 
@@ -103,18 +127,20 @@ async def process_sticker_name(message: types.Message, state: FSMContext):
     if not name:
         await message.answer("Название не может быть пустым. Попробуйте еще раз.")
         return
-    
+
     await state.update_data(name=name)
     await state.set_state(StickerStates.waiting_for_sticker)
     await message.answer(f"Отправьте стикер для названия <code>{name}</code>")
 
 
 @router.message(StickerStates.waiting_for_sticker, F.sticker)
-async def process_sticker_file(message: types.Message, state: FSMContext, stickers_repo: StickersRepository):
+async def process_sticker_file(
+    message: types.Message, state: FSMContext, stickers_repo: StickersRepository
+):
     data = await state.get_data()
-    name = data['name']
+    name = data["name"]
     file_id = message.sticker.file_id
-    
+
     stickers_repo.add_sticker(name, file_id)
     await message.answer(f"✅ Стикер <code>{name}</code> успешно сохранен!")
     await state.clear()
@@ -127,13 +153,13 @@ async def delete_menu(callback: types.CallbackQuery, stickers_repo: StickersRepo
     # If there are too many, buttons won't work well.
     # Let's ask for name for now, or maybe show top 10?
     # Let's ask for name with a message.
-    
+
     # Actually, let's use a simple way: "Send me the name of the sticker to delete"
     # But we need a state for that.
-    pass 
+    pass
     # For now, let's implement a simple "Enter name to delete" flow?
     # Or maybe we can use inline query?
-    
+
     # Let's stick to a simple state flow for deletion too.
     await callback.answer("Функция удаления пока через ввод имени.")
     # We need another state for deletion.
@@ -151,7 +177,9 @@ async def start_delete_sticker(callback: types.CallbackQuery, state: FSMContext)
 
 
 @router.message(StickerDeleteStates.waiting_for_name)
-async def process_delete_name(message: types.Message, state: FSMContext, stickers_repo: StickersRepository):
+async def process_delete_name(
+    message: types.Message, state: FSMContext, stickers_repo: StickersRepository
+):
     name = message.text.strip()
     if stickers_repo.delete_sticker(name):
         await message.answer(f"✅ Стикер <code>{name}</code> удален.")
@@ -173,24 +201,28 @@ async def start_edit_sticker(callback: types.CallbackQuery, state: FSMContext):
 
 
 @router.message(StickerEditStates.waiting_for_name)
-async def process_edit_name(message: types.Message, state: FSMContext, stickers_repo: StickersRepository):
+async def process_edit_name(
+    message: types.Message, state: FSMContext, stickers_repo: StickersRepository
+):
     name = message.text.strip()
     if not stickers_repo.get_sticker(name):
         await message.answer(f"❌ Стикер <code>{name}</code> не найден.")
         await state.clear()
         return
-    
+
     await state.update_data(name=name)
     await state.set_state(StickerEditStates.waiting_for_new_sticker)
     await message.answer(f"Отправьте новый стикер для <code>{name}</code>")
 
 
 @router.message(StickerEditStates.waiting_for_new_sticker, F.sticker)
-async def process_edit_file(message: types.Message, state: FSMContext, stickers_repo: StickersRepository):
+async def process_edit_file(
+    message: types.Message, state: FSMContext, stickers_repo: StickersRepository
+):
     data = await state.get_data()
-    name = data['name']
+    name = data["name"]
     file_id = message.sticker.file_id
-    
+
     stickers_repo.add_sticker(name, file_id)
     await message.answer(f"✅ Стикер <code>{name}</code> обновлен!")
     await state.clear()
@@ -203,10 +235,7 @@ async def backup_stickers(callback: types.CallbackQuery, stickers_repo: Stickers
         await callback.answer("Файл стикеров не найден.", show_alert=True)
         return
 
-    await callback.message.answer_document(
-        FSInputFile(file_path),
-        caption="💾 Бэкап стикеров"
-    )
+    await callback.message.answer_document(FSInputFile(file_path), caption="💾 Бэкап стикеров")
     await callback.answer()
 
 
@@ -217,32 +246,35 @@ async def start_restore_stickers(callback: types.CallbackQuery, state: FSMContex
         "⚠️ <b>Внимание!</b> Восстановление перезапишет текущий список стикеров.\n"
         "Отправьте файл <code>stickers.json</code> для восстановления:",
         parse_mode="HTML",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="sticker_menu")]
-        ])
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="sticker_menu")]
+            ]
+        ),
     )
     await callback.answer()
 
 
 @router.message(StickerStates.waiting_for_restore_file, F.document)
-async def process_restore_file(message: types.Message, state: FSMContext, stickers_repo: StickersRepository, bot: Bot):
-    if not message.document.file_name.endswith('.json'):
+async def process_restore_file(
+    message: types.Message, state: FSMContext, stickers_repo: StickersRepository, bot: Bot
+):
+    if not message.document.file_name.endswith(".json"):
         await message.answer("❌ Пожалуйста, отправьте файл с расширением .json")
         return
 
     try:
         file = await bot.get_file(message.document.file_id)
         file_content = await bot.download_file(file.file_path)
-        json_content = file_content.read().decode('utf-8')
-        
+        json_content = file_content.read().decode("utf-8")
+
         if stickers_repo.restore_from_json(json_content):
             await message.answer("✅ Список стикеров успешно восстановлен!")
         else:
             await message.answer("❌ Ошибка при восстановлении. Проверьте формат файла.")
-            
+
     except Exception as e:
         logger.error(f"Error restoring stickers: {e}")
         await message.answer("❌ Произошла ошибка при обработке файла.")
-    
-    await state.clear()
 
+    await state.clear()

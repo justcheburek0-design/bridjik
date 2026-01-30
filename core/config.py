@@ -1,9 +1,10 @@
 """Configuration management."""
 
 import os
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict
+
 from dotenv import load_dotenv
 
 from __init__ import __version__
@@ -20,19 +21,13 @@ class Config:
     BOT_USERNAME: str = "minebridge52bot"
     VERSION: str = __version__
     ADMIN_IDS: list[int] = field(
-        default_factory=lambda: [
-            int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
-        ]
+        default_factory=lambda: [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
     )
 
     # Channels and URLs
-    CHANNEL: str = field(
-        default_factory=lambda: os.getenv("CHANNEL", "@MineBridgeOfficial")
-    )
+    CHANNEL: str = field(default_factory=lambda: os.getenv("CHANNEL", "@MineBridgeOfficial"))
     SUPPORT_URL: str = field(
-        default_factory=lambda: os.getenv(
-            "SUPPORT_URL", "https://t.me/HelpSupportMineBridgeBot"
-        )
+        default_factory=lambda: os.getenv("SUPPORT_URL", "https://t.me/HelpSupportMineBridgeBot")
     )
     DONATE_URL: str = field(
         default_factory=lambda: os.getenv("DONATE_URL", "https://m-br.ru/shop/buy")
@@ -41,15 +36,11 @@ class Config:
     # API Keys
     OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     OPENAI_BASE_URL: str = field(
-        default_factory=lambda: os.getenv(
-            "OPENAI_BASE_URL", "https://openrouter.ai/api/v1"
-        )
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
     )
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     JINA_API_KEY: str = field(default_factory=lambda: os.getenv("JINA_API_KEY", ""))
-    PIXABAY_API_KEY: str = field(
-        default_factory=lambda: os.getenv("PIXABAY_API_KEY", "")
-    )
+    PIXABAY_API_KEY: str = field(default_factory=lambda: os.getenv("PIXABAY_API_KEY", ""))
     TAVILY_API_KEY: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
 
     # MineBridge API
@@ -60,9 +51,7 @@ class Config:
     MC_CACHE_TTL: int = 20
 
     # Paths
-    BASE_DIR: Path = field(
-        default_factory=lambda: Path(__file__).resolve().parent.parent
-    )
+    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).resolve().parent.parent)
     KB_DIR: Path = field(init=False)
     DATA_DIR: Path = field(init=False)
     RAG_INDEX_DIR: Path = field(init=False)
@@ -84,22 +73,17 @@ class Config:
     RAG_CHUNK_OVERLAP: int = 150
     RAG_MIN_CHUNKS: int = 1  # Minimum number of chunks to return
     RAG_MAX_CHUNKS: int = 12  # Maximum number of chunks to return
-    RAG_SIMILARITY_THRESHOLD: float = (
-        0.75  # Minimum relative score (0.0-1.0) compared to top chunk
-    )
+    RAG_SIMILARITY_THRESHOLD: float = 0.75  # Minimum relative score (0.0-1.0) compared to top chunk
     RAG_EMB_MODEL: str = "jina-embeddings-v3"
     RAG_EMB_BATCH: int = 64
 
     # AI Models
-    AI_MODEL: str = field(
-        default_factory=lambda: os.getenv("AI_MODEL")
+    AI_MODEL: str = field(default_factory=lambda: os.getenv("AI_MODEL", "x-ai/grok-4.1-fast"))
+    GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    IMAGE_MODEL: str = field(
+        default_factory=lambda: os.getenv("IMAGE_MODEL", "bytedance-seed/seedream-4.5")
     )
-    GEMINI_MODEL: str = field(
-        default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    )
-    TTS_URL: str = field(
-        default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts")
-    )
+    TTS_URL: str = field(default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts"))
     ENABLE_TTS: bool = field(
         default_factory=lambda: os.getenv("ENABLE_TTS", "True").lower() == "true"
     )

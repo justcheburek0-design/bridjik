@@ -1,13 +1,13 @@
 """Server-related command handlers."""
-from aiogram import types, Router
+
+from aiogram import Router, types
 from aiogram.filters import Command
 
 from application.services.subscription import SubscriptionService
-from infrastructure.external.mc_api import MinecraftAPI
 from infrastructure.external.mb_api import MineBridgeAPI
-from presentation.formatters import Formatter
+from infrastructure.external.mc_api import MinecraftAPI
 from presentation.decorators import handle_errors
-
+from presentation.formatters import Formatter
 
 router = Router()
 
@@ -31,16 +31,16 @@ async def cmd_player(
     message: types.Message,
     subscription_service: SubscriptionService,
     mb_api: MineBridgeAPI,
-    formatter: Formatter
+    formatter: Formatter,
 ):
     """Handle /player command."""
     user_id = message.from_user.id
     text = (message.text or "").strip()
-    
+
     if not await subscription_service.is_subscribed(user_id):
         await message.reply("Подпишитесь на @MineBridgeOfficial, чтобы пользоваться бриджиком")
         return
-    
+
     msg = await message.reply("🔎 Проверяю тебя...")
     try:
         player_info = await mb_api.fetch_player_by_id(str(user_id))
@@ -54,4 +54,3 @@ async def cmd_player(
         await msg.edit_text(text)
     except Exception as e:
         await msg.edit_text(f"❌ Ошибка при запросе: {str(e)}")
-

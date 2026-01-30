@@ -5,9 +5,10 @@
 """
 
 from typing import Optional
+
 from aiogram import types
 
-from utils.message import get_message_text, get_reply_quote, get_media_description
+from utils.message import get_media_description, get_message_text, get_reply_quote
 
 
 def format_reply_message(

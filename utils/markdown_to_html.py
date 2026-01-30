@@ -27,9 +27,7 @@ def markdown_to_telegram_html(text: str) -> str:
 
     # Code blocks first (```...```)
     # Handle multiline code blocks
-    result = re.sub(
-        r"```(?:\w+)?\n?(.*?)```", r"<pre>\1</pre>", result, flags=re.DOTALL
-    )
+    result = re.sub(r"```(?:\w+)?\n?(.*?)```", r"<pre>\1</pre>", result, flags=re.DOTALL)
 
     # Inline code (`...`)
     result = re.sub(r"`([^`]+)`", r"<code>\1</code>", result)
