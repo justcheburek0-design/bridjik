@@ -81,7 +81,7 @@ class Config:
     AI_MODEL: str = field(default_factory=lambda: os.getenv("AI_MODEL", "x-ai/grok-4.1-fast"))
     GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
     IMAGE_MODEL: str = field(
-        default_factory=lambda: os.getenv("IMAGE_MODEL", "bytedance-seed/seedream-4.5")
+        default_factory=lambda: os.getenv("IMAGE_MODEL", "black-forest-labs/flux.2-klein-4b")
     )
     TTS_URL: str = field(default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts"))
     ENABLE_TTS: bool = field(
