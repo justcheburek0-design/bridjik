@@ -1,27 +1,8 @@
 """Chat helper utilities."""
 
-from typing import Optional, Union
+from typing import Optional
 
 from aiogram import types
-from aiogram.enums import ChatType
-
-
-def is_group_chat(chat_type: Optional[Union[ChatType, str]]) -> bool:
-    """Check if chat is a group or supergroup.
-
-    Args:
-        chat_type: Chat type from aiogram (ChatType enum or string)
-
-    Returns:
-        True if chat is GROUP or SUPERGROUP
-    """
-    if chat_type is None:
-        return False
-
-    if isinstance(chat_type, str):
-        return chat_type.upper() in ("GROUP", "SUPERGROUP")
-
-    return chat_type in (ChatType.GROUP, ChatType.SUPERGROUP)
 
 
 def get_author_name(message: types.Message, fallback: str = "unknown") -> str:
@@ -54,21 +35,6 @@ def get_message_id(message: types.Message) -> Optional[int]:
         return message.message_id
     except AttributeError:
         return getattr(message, "message_id", None)
-
-
-def get_replied_message_id(message: types.Message) -> Optional[int]:
-    """Safely get replied message ID.
-
-    Args:
-        message: Telegram message
-
-    Returns:
-        Replied message ID or None if not available
-    """
-    if not message.reply_to_message:
-        return None
-
-    return getattr(message.reply_to_message, "message_id", None)
 
 
 def is_bot_message(message: types.Message) -> bool:

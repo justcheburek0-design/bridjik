@@ -20,7 +20,7 @@ from domain.interfaces import (
 )
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
-from utils.chat_helpers import get_message_id
+from utils.chat_helpers import get_author_name, is_bot_message, get_message_id
 from utils.message import get_reply_quote
 from utils.message_formatter import build_message_text_for_save
 from utils.text import truncate_text
@@ -46,13 +46,8 @@ def _save_incoming_message(
     image_bytes: Optional[bytes] = None,
     mime_type: Optional[str] = None,
 ) -> None:
-    """Save incoming message to chat logs.
-
-    TODO: Move this logic to a repository wrapper or service in future steps.
-    """
+    """Save incoming message to chat logs."""
     chat_id = message.chat.id
-    # Use DTO or helper, but for now reuse existing headers
-    from utils.chat_helpers import get_author_name, is_bot_message
 
     author = get_author_name(message, "unknown")
     is_bot = is_bot_message(message)
@@ -123,10 +118,6 @@ async def auto_reply(
         logger.info("Auto replies are temporarily frozen for user %s", dto.user_id)
 
     # 3. Media processing logic (if we are responding OR if we just need to save to logs)
-    # We download media if we are going to respond (to process it)
-    # OR if we want to save it to logs (currently logs support images).
-    # Existing logic saved images to logs even if not responding?
-    # "Always download (for logs), but send status only if we will respond" -> logic from old code.
 
     image_bytes = None
     mime_type = None
