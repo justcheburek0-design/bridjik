@@ -108,7 +108,35 @@ class AIService:
 
                     # Execute tools
                     for tool_call in response_message.tool_calls:
+                        # Save tool call to logs
+                        try:
+                            func_name = tool_call.function.name
+                            func_args = tool_call.function.arguments
+                            self.chat_logs_repo.add_message(
+                                context.chat.id,
+                                "Ассистент",
+                                True,
+                                f"🔨 Вызов инструмента: {func_name}({func_args})",
+                            )
+                        except Exception:
+                            logger.warning("Failed to save tool call to logs", exc_info=True)
+
                         tool_result = await self._execute_tool(tool_call)
+
+                        # Save tool result to logs
+                        try:
+                            # Parse content from tool result
+                            content = tool_result.get("content", "")
+                            tool_name = tool_result.get("name", "unknown")
+                            self.chat_logs_repo.add_message(
+                                context.chat.id,
+                                "Ассистент",
+                                True,
+                                f"🔧 Результат {tool_name}: {content}",
+                            )
+                        except Exception:
+                            logger.warning("Failed to save tool result to logs", exc_info=True)
+
                         messages.append(tool_result)
 
                     # Continue loop to get next response from model
@@ -166,7 +194,7 @@ class AIService:
                 stickers = list(self.stickers_repo.get_all_stickers().keys())
                 content = f"Available stickers: {', '.join(stickers)}"
             elif name == "get_news":
-                limit = min(args.get("limit", 5), 15)
+                limit = min(args.get("limit", 10), 20)
                 offset = args.get("offset", 0)
                 news_data = await self.news_api.fetch_news(limit, offset)
                 if news_data:
@@ -475,13 +503,15 @@ class AIService:
 
         # Add chat context for groups (history is kept as separate messages)
         # Add chat context for all chats (universally from chat logs)
-        chat_context = self._build_chat_context_from_logs(context, message)
-        if chat_context:
-            # Remove image_bytes from chat_context for JSON serialization
+        original_chat_context = self._build_chat_context_from_logs(context, message)
+        if original_chat_context:
+            # Create a COPY without image_bytes for JSON serialization
             # Images are already handled in _build_messages() as data URLs
-            if "recent_messages" in chat_context:
+            chat_context_for_json = {}
+
+            if "recent_messages" in original_chat_context:
                 cleaned_messages = []
-                for msg in chat_context["recent_messages"]:
+                for msg in original_chat_context["recent_messages"]:
                     # Create a copy without image_bytes and mime_type
                     cleaned_msg = {
                         "message_id": msg.get("message_id"),
@@ -491,23 +521,23 @@ class AIService:
                         # Don't include image_bytes and mime_type - they're handled separately
                     }
                     cleaned_messages.append(cleaned_msg)
-                chat_context["recent_messages"] = cleaned_messages
+                chat_context_for_json["recent_messages"] = cleaned_messages
 
             # Clean reply_to as well
-            if "reply_to" in chat_context:
-                reply_info = chat_context["reply_to"]
+            if "reply_to" in original_chat_context:
+                reply_info = original_chat_context["reply_to"]
                 # Find the replied message in recent_messages by message_id
                 replied_msg_id = reply_info.get("message_id")
                 replied_full_context = None
 
-                if replied_msg_id and "recent_messages" in chat_context:
-                    for msg in chat_context["recent_messages"]:
+                if replied_msg_id and "recent_messages" in chat_context_for_json:
+                    for msg in chat_context_for_json["recent_messages"]:
                         if msg.get("message_id") == replied_msg_id:
                             replied_full_context = msg
                             break
 
                 # Build cleaned reply_to with full message context
-                chat_context["reply_to"] = {
+                chat_context_for_json["reply_to"] = {
                     "message_id": replied_msg_id,
                     "author": reply_info.get("author"),
                     "text": reply_info.get("text"),
@@ -515,7 +545,7 @@ class AIService:
                     "full_message": replied_full_context,  # Add full message from logs if found
                 }
 
-            structured_data["chat_context"] = chat_context
+            structured_data["chat_context"] = chat_context_for_json
 
         # Add current message
         display_name = context.user.get_display_name()
@@ -526,7 +556,7 @@ class AIService:
 
         import json
 
-        return json.dumps(structured_data, ensure_ascii=False, indent=2), chat_context
+        return json.dumps(structured_data, ensure_ascii=False, indent=2), original_chat_context
 
     def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
         """Create data URL for image."""

@@ -827,8 +827,44 @@ class MediaService:
                         sent_messages.append(
                             (m.message_id, f"[find_photo:{payload}]", image_bytes, mime_type)
                         )
-                except Exception:
-                    logger.exception("failed to send photo: %s", payload)
+                except Exception as exc:
+                    logger.warning(
+                        "failed to send photo directly: %s. Trying manual download.", exc
+                    )
+                    # Fallback: if it was a URL, try to download valid image manually
+                    if isinstance(photo_arg, str) and self._is_url(photo_arg):
+                        try:
+                            # Use existing online search helper which handles downloading
+                            # But we need direct download from URL, not search
+                            async with httpx.AsyncClient(
+                                timeout=_IMAGE_TIMEOUT,
+                                headers=_IMAGE_HEADERS,
+                                follow_redirects=True,
+                            ) as client:
+                                resp = await client.get(photo_arg)
+                                resp.raise_for_status()
+                                content = resp.content
+                                if content:
+                                    filename = self._build_image_filename(
+                                        "url_image", photo_arg, resp.headers.get("Content-Type")
+                                    )
+                                    fallback_file = BufferedInputFile(content, filename=filename)
+                                    m_fallback = await user_msg.answer_photo(photo=fallback_file)
+                                    if m_fallback:
+                                        sent_messages.append(
+                                            (
+                                                m_fallback.message_id,
+                                                f"[find_photo:{payload}]",
+                                                content,
+                                                "image/jpeg",
+                                            )
+                                        )
+                                else:
+                                    logger.warning("Empty content from fallback download")
+                        except Exception as fb_exc:
+                            logger.exception("fallback download failed for %s: %s", payload, fb_exc)
+                    else:
+                        logger.exception("failed to send photo: %s", payload)
             elif kind == "gen_photo":
                 photo_arg = await self.generate_image_via_ai(payload)
                 if photo_arg is None:

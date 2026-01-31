@@ -140,6 +140,7 @@ async def _download_image_media(
     media_service: MediaService,
     has_sticker: bool,
     has_animation: bool,
+    send_status: bool = True,
 ) -> Tuple[Optional[bytes], Optional[str], Optional[types.Message]]:
     """Download image media from message.
 
@@ -148,6 +149,7 @@ async def _download_image_media(
         media_service: Media service
         has_sticker: Whether message has sticker
         has_animation: Whether message has animation
+        send_status: Whether to send status message (default: True)
 
     Returns:
         Tuple of (image_bytes, mime_type, status_message)
@@ -155,17 +157,24 @@ async def _download_image_media(
     status_msg = None
 
     if has_sticker:
-        status_msg = await message.reply(STATUS_STICKER)
+        if send_status:
+            status_msg = await message.reply(STATUS_STICKER)
         image_data = await media_service.download_sticker(message)
     elif has_animation:
-        status_msg = await message.reply(STATUS_ANIMATION)
+        if send_status:
+            status_msg = await message.reply(STATUS_ANIMATION)
         image_data = await media_service.download_animation(message)
     else:
-        status_msg = await message.reply(STATUS_IMAGE)
+        if send_status:
+            status_msg = await message.reply(STATUS_IMAGE)
         image_data = await media_service.download_image(message)
 
     if image_data:
-        return image_data[0], image_data[1], status_msg
+        image_bytes, mime_type = image_data[0], image_data[1]
+        logger.info(
+            f"Downloaded image: {len(image_bytes) if image_bytes else 0} bytes, mime: {mime_type}"
+        )
+        return image_bytes, mime_type, status_msg
     else:
         logger.warning("Failed to download image, continuing with text only")
         return None, None, status_msg
@@ -239,6 +248,10 @@ def _save_incoming_message(
         image_bytes: Optional image data
         mime_type: Optional MIME type for image
     """
+    logger.info(
+        f"_save_incoming_message called with: image_bytes={len(image_bytes) if image_bytes else 0} bytes, mime_type={mime_type}"
+    )
+
     chat_id = message.chat.id
     author = get_author_name(message, "unknown")
     is_bot = is_bot_message(message)
@@ -302,36 +315,49 @@ async def auto_reply(
     has_voice = bool(getattr(message, "voice", None))
     user_id = getattr(message.from_user, "id", None)
 
-    # Voice transcription
-    if has_voice:
+    # Determine if we should respond (before downloading media or transcribing)
+    chat_type = getattr(message.chat, "type", None)
+    should_respond = not is_group_chat(chat_type) or _should_answer(message, config.BOT_USERNAME)
+
+    # Voice transcription - only if we will respond
+    if has_voice and should_respond:
         transcribed = await _handle_voice_transcription(message, media_service, gemini_api)
         if transcribed:
             prompt = transcribed
 
+    # Download image/sticker/animation if present
+    # Always download (for logs), but send status only if we will respond
+    image_bytes = None
+    mime_type = None
+    msg = None
+    if has_image:
+        image_bytes, mime_type, msg = await _download_image_media(
+            message, media_service, has_sticker, has_animation, send_status=should_respond
+        )
+
+    # Check if empty message
     if not prompt and not has_image:
-        _save_incoming_message(chat_logs_repo, message, prompt)
+        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
         return
 
     # Check freeze
     if user_id is not None and freezes_repo.is_frozen(user_id):
         logger.info("Auto replies are temporarily frozen for user %s", user_id)
-        _save_incoming_message(chat_logs_repo, message, prompt)
+        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
         return
 
-    # Check if in group and should answer
-    chat_type = getattr(message.chat, "type", None)
-    if is_group_chat(chat_type) and not _should_answer(message, config.BOT_USERNAME):
+    # If in group and shouldn't answer - save to logs and return
+    if not should_respond:
         logger.info("Skipped message without bot mention in group")
-        _save_incoming_message(chat_logs_repo, message, prompt)
+        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
         return
 
     # Check subscription
     if not await subscription_service.is_subscribed(user_id):
         await message.reply(SUBSCRIPTION_REQUIRED)
-        _save_incoming_message(chat_logs_repo, message, prompt)
+        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
         return
 
-    msg = None
     try:
         await media_service.send_typing_action(message.chat.id)
 
@@ -342,14 +368,6 @@ async def auto_reply(
             type=str(chat_type) if chat_type else "unknown",
             title=getattr(message.chat, "title", None),
         )
-
-        # Download image/sticker/animation if present
-        image_bytes = None
-        mime_type = None
-        if has_image:
-            image_bytes, mime_type, msg = await _download_image_media(
-                message, media_service, has_sticker, has_animation
-            )
 
         if not msg:
             msg = await message.reply(STATUS_VOICE if has_voice else STATUS_PROCESSING)
@@ -370,6 +388,9 @@ async def auto_reply(
 
         # Save incoming message to logs BEFORE generating AI response
         # This ensures the current message is included in chat context
+        logger.info(
+            f"Saving message with image: {len(image_bytes) if image_bytes else 0} bytes, mime: {mime_type}"
+        )
         _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
 
         # Define status update callback
