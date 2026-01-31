@@ -13,8 +13,22 @@ class IHistoryRepository(ABC):
         pass
 
     @abstractmethod
+    def add_user_message_with_image(
+        self, chat_id: int, user_id: int, text: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Add user message with image to history."""
+        pass
+
+    @abstractmethod
     def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
         """Add assistant message to history."""
+        pass
+
+    @abstractmethod
+    def add_assistant_message_with_image(
+        self, chat_id: int, user_id: int, text: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Add assistant message with image to history."""
         pass
 
     @abstractmethod
@@ -28,16 +42,33 @@ class IChatLogsRepository(ABC):
 
     @abstractmethod
     def add_message(
-        self, chat_id: int, author: str, is_bot: bool, text: str, message_id: Optional[int] = None
+        self,
+        chat_id: int,
+        author: str,
+        is_bot: bool,
+        text: str,
+        message_id: Optional[int] = None,
+        image_bytes: Optional[bytes] = None,
+        mime_type: Optional[str] = None,
     ) -> None:
-        """Add message to chat logs."""
+        """Add message to chat logs.
+
+        Args:
+            chat_id: Chat ID
+            author: Author name
+            is_bot: Whether message is from bot
+            text: Text content (including media description)
+            message_id: Optional message ID
+            image_bytes: Optional image data
+            mime_type: Optional MIME type for image
+        """
         pass
 
     @abstractmethod
     def get_recent_messages(
         self, chat_id: int, limit: int
-    ) -> List[Tuple[Optional[int], str, bool, str]]:
-        """Get recent messages. Returns list of (message_id, author, is_bot, text) tuples."""
+    ) -> List[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]]:
+        """Get recent messages. Returns list of (message_id, author, is_bot, text, image_bytes, mime_type) tuples."""
         pass
 
     @abstractmethod

@@ -11,63 +11,6 @@ from aiogram import types
 from utils.message import get_media_description, get_message_text, get_reply_quote
 
 
-def format_reply_message(
-    message: types.Message,
-    author_name: str,
-    current_msg_id: Optional[int] = None,
-    replied_msg_id: Optional[int] = None,
-    quote: Optional[str] = None,
-    is_private: bool = False,
-    replied_message_text: Optional[str] = None,
-) -> str:
-    """Форматирует сообщение-ответ для контекста AI.
-
-    Создаёт читаемое представление сообщения, которое является ответом на другое сообщение,
-    включая информацию о процитированном тексте.
-
-    Args:
-        message: Telegram сообщение
-        author_name: Отображаемое имя автора
-        current_msg_id: ID текущего сообщения (опционально)
-        replied_msg_id: ID сообщения, на которое отвечают (опционально)
-        quote: Процитированный текст (опционально)
-        is_private: Флаг приватного чата
-        replied_message_text: Полный текст сообщения, на которое отвечают (опционально)
-
-    Returns:
-        Форматированная строка с информацией об ответе
-
-    Examples:
-        >>> # В группе: "[123] Иван (отвечая на сообщение 122): Согласен"
-        >>> # В личке: "Пользователь (отвечая на \"твой текст\"): Ответ"
-    """
-    current_text = get_message_text(message)
-
-    # Определяем метку автора
-    author_label = "Пользователь" if is_private else author_name
-
-    # Формируем информацию о сообщении, на которое отвечают
-    if replied_message_text:
-        # Используем полный текст, если доступен (обрезаем до 100 символов)
-        truncated = replied_message_text[:100]
-        if len(replied_message_text) > 100:
-            truncated += "..."
-        replied_info = f'сообщение {replied_msg_id} ("{truncated}")'
-    elif quote:
-        # Используем цитату, если доступна
-        replied_info = f'"{quote}"'
-    elif replied_msg_id:
-        # Используем только ID сообщения
-        replied_info = f"сообщение {replied_msg_id}"
-    else:
-        replied_info = "сообщение"
-
-    # Форматируем финальное сообщение
-    if current_msg_id:
-        return f"[{current_msg_id}] {author_label} (отвечая на {replied_info}): {current_text}"
-    else:
-        return f"{author_label} (отвечая на {replied_info}): {current_text}"
-
 
 def combine_text_and_media(text: str, media_desc: str) -> str:
     """Комбинирует текст и описание медиа.

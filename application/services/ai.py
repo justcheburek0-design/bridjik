@@ -74,8 +74,10 @@ class AIService:
         """Generate AI completion for given context."""
         full_system_prompt = system_prompt
 
-        user_input = await self._build_user_input(context, message)
-        messages = self._build_messages(full_system_prompt, user_input, context)
+        user_input, original_chat_context = await self._build_user_input(context, message)
+        messages = self._build_messages(
+            full_system_prompt, user_input, context, original_chat_context
+        )
         tools = self._get_tools()
 
         try:
@@ -295,6 +297,7 @@ class AIService:
         system_prompt: str,
         user_input: str,
         context: MessageContext,
+        chat_context: Optional[dict] = None,
     ) -> List[dict]:
         """Build messages list for OpenAI API.
 
@@ -335,7 +338,11 @@ class AIService:
         messages = [{"role": "system", "content": system_content}]
 
         # Build messages from chat logs (previously "group chat" logic, now universal)
-        chat_context = input_data.get("chat_context", {})
+        # Use the original chat_context passed directly (with image_bytes)
+        # or fall back to parsing from user_input JSON
+        if chat_context is None:
+            input_data = json.loads(user_input)
+            chat_context = input_data.get("chat_context", {})
         recent_messages = chat_context.get("recent_messages", [])
 
         # Skip leading assistant messages to ensure first message is from user
@@ -345,6 +352,8 @@ class AIService:
             author = msg.get("author", "Unknown")
             is_bot = msg.get("is_bot", False)
             text = msg.get("text", "")
+            image_bytes = msg.get("image_bytes")
+            mime_type = msg.get("mime_type")
 
             if not text:
                 continue
@@ -358,7 +367,22 @@ class AIService:
                 first_user_found = True
 
             role = "assistant" if is_bot else "user"
-            content = text if is_bot else f"{author}: {text}"
+
+            # Build content - multimodal if there's an image
+            if image_bytes and mime_type:
+                # Multimodal content: text + image
+                content_parts = []
+                if text:
+                    text_content = text if is_bot else f"{author}: {text}"
+                    content_parts.append({"type": "text", "text": text_content})
+
+                # Add image
+                data_url = self._make_data_url(image_bytes, mime_type)
+                content_parts.append({"type": "image_url", "image_url": {"url": data_url}})
+                content = content_parts
+            else:
+                # Text only
+                content = text if is_bot else f"{author}: {text}"
 
             messages.append({"role": role, "content": content})
 
@@ -424,10 +448,8 @@ class AIService:
         return remove_html(text)
 
     async def _build_user_input(
-        self,
-        context: MessageContext,
-        message: Optional[types.Message],
-    ) -> str:
+        self, context: MessageContext, message: Optional[types.Message]
+    ) -> Tuple[str, dict]:
         """Build user input with JSON context.
 
         Args:
@@ -455,6 +477,44 @@ class AIService:
         # Add chat context for all chats (universally from chat logs)
         chat_context = self._build_chat_context_from_logs(context, message)
         if chat_context:
+            # Remove image_bytes from chat_context for JSON serialization
+            # Images are already handled in _build_messages() as data URLs
+            if "recent_messages" in chat_context:
+                cleaned_messages = []
+                for msg in chat_context["recent_messages"]:
+                    # Create a copy without image_bytes and mime_type
+                    cleaned_msg = {
+                        "message_id": msg.get("message_id"),
+                        "author": msg.get("author"),
+                        "is_bot": msg.get("is_bot"),
+                        "text": msg.get("text"),
+                        # Don't include image_bytes and mime_type - they're handled separately
+                    }
+                    cleaned_messages.append(cleaned_msg)
+                chat_context["recent_messages"] = cleaned_messages
+
+            # Clean reply_to as well
+            if "reply_to" in chat_context:
+                reply_info = chat_context["reply_to"]
+                # Find the replied message in recent_messages by message_id
+                replied_msg_id = reply_info.get("message_id")
+                replied_full_context = None
+
+                if replied_msg_id and "recent_messages" in chat_context:
+                    for msg in chat_context["recent_messages"]:
+                        if msg.get("message_id") == replied_msg_id:
+                            replied_full_context = msg
+                            break
+
+                # Build cleaned reply_to with full message context
+                chat_context["reply_to"] = {
+                    "message_id": replied_msg_id,
+                    "author": reply_info.get("author"),
+                    "text": reply_info.get("text"),
+                    "quote": reply_info.get("quote"),
+                    "full_message": replied_full_context,  # Add full message from logs if found
+                }
+
             structured_data["chat_context"] = chat_context
 
         # Add current message
@@ -466,7 +526,7 @@ class AIService:
 
         import json
 
-        return json.dumps(structured_data, ensure_ascii=False, indent=2)
+        return json.dumps(structured_data, ensure_ascii=False, indent=2), chat_context
 
     def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
         """Create data URL for image."""
@@ -495,20 +555,26 @@ class AIService:
             if reply_data:
                 chat_context["reply_to"] = reply_data
 
-        # Add recent messages
+        # Add recent messages (with images!)
         recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 10)
         if recent:
             recent_messages = []
             for msg_data in recent:
-                message_id, author, is_bot, text = msg_data
-                recent_messages.append(
-                    {
-                        "message_id": message_id,
-                        "author": author,
-                        "is_bot": is_bot,
-                        "text": text,
-                    }
-                )
+                # Unpack: (message_id, author, is_bot, text, image_bytes, mime_type)
+                message_id, author, is_bot, text, image_bytes, mime_type = msg_data
+                msg_dict = {
+                    "message_id": message_id,
+                    "author": author,
+                    "is_bot": is_bot,
+                    "text": text,
+                }
+
+                # Include image data if present
+                if image_bytes and mime_type:
+                    msg_dict["image_bytes"] = image_bytes
+                    msg_dict["mime_type"] = mime_type
+
+                recent_messages.append(msg_dict)
             chat_context["recent_messages"] = recent_messages
 
         return chat_context

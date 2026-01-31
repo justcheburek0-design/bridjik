@@ -1,5 +1,6 @@
 """History repository implementation."""
 
+import base64
 import json
 import logging
 from collections import defaultdict, deque
@@ -88,6 +89,24 @@ class HistoryRepository(IHistoryRepository):
         self._history[key].append({"role": "user", "content": shorten(text)})
         self._save()
 
+    def add_user_message_with_image(
+        self, chat_id: int, user_id: int, text: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Add user message with image to history in multimodal format."""
+        key = self._make_key(chat_id, user_id)
+        content: List[dict] = []
+
+        # Add text part (include media description)
+        if text:
+            content.append({"type": "text", "text": shorten(text)})
+
+        # Add image part
+        data_url = self._make_data_url(image_bytes, mime_type)
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+        self._history[key].append({"role": "user", "content": content})
+        self._save()
+
     def add_assistant_message(self, chat_id: int, user_id: int, text: str) -> None:
         """Add assistant message to history in OpenAI format: {"role": "assistant", "content": "..."}"""
         key = self._make_key(chat_id, user_id)
@@ -95,7 +114,41 @@ class HistoryRepository(IHistoryRepository):
         self._history[key].append(msg)
         self._save()
 
+    def add_assistant_message_with_image(
+        self, chat_id: int, user_id: int, text: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Add assistant message with image to history in multimodal format."""
+        key = self._make_key(chat_id, user_id)
+        content: List[dict] = []
+
+        # Add text part
+        if text:
+            content.append({"type": "text", "text": shorten(text)})
+
+        # Add image part
+        data_url = self._make_data_url(image_bytes, mime_type)
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+        self._history[key].append({"role": "assistant", "content": content})
+        self._save()
+
     def get_history(self, chat_id: int, user_id: int) -> List[dict]:
         """Get conversation history as a list of OpenAI-compatible message dicts."""
         key = self._make_key(chat_id, user_id)
         return list(self._history.get(key, deque()))
+
+    def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
+        """Create data URL for image in base64 format.
+
+        Args:
+            image_bytes: Image data
+            mime_type: MIME type (e.g., 'image/jpeg', 'image/png')
+
+        Returns:
+            Data URL string (e.g., 'data:image/jpeg;base64,/9j/4AAQ...')
+        """
+        mt = (mime_type or "image/jpeg").strip().lower()
+        if not mt.startswith("image/"):
+            mt = f"image/{mt}" if "/" not in mt else mt
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        return f"data:{mt};base64,{b64}"

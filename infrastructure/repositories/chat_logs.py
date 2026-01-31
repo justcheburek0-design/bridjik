@@ -1,5 +1,6 @@
 """Chat logs repository implementation."""
 
+import base64
 import json
 import logging
 from collections import defaultdict, deque
@@ -16,9 +17,10 @@ class ChatLogsRepository(IChatLogsRepository):
     def __init__(self, file_path: Path, max_messages: int = 12):
         self.file_path = file_path
         self.max_messages = max_messages
-        self._logs: Dict[int, Deque[Tuple[Optional[int], str, bool, str]]] = defaultdict(
-            lambda: deque(maxlen=max_messages)
-        )
+        # Store: (message_id, author, is_bot, text, image_bytes, mime_type)
+        self._logs: Dict[
+            int, Deque[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]]
+        ] = defaultdict(lambda: deque(maxlen=max_messages))
         self._load()
 
     def _load(self) -> None:
@@ -34,22 +36,56 @@ class ChatLogsRepository(IChatLogsRepository):
                 except Exception:
                     continue
 
-                dq: Deque[Tuple[Optional[int], str, bool, str]] = deque(maxlen=self.max_messages)
+                dq: Deque[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]] = (
+                    deque(maxlen=self.max_messages)
+                )
                 for row in items:
                     try:
                         # Skip if it's history format (dict)
                         if isinstance(row, dict):
                             continue
-                        # Support both old format (3 elements) and new format (4 elements)
+
+                        # Support multiple formats
                         if len(row) == 3:
                             # Old format: [author, is_bot, msg]
                             author, is_bot, msg = row
                             message_id = None
-                        else:
-                            # New format: [message_id, author, is_bot, msg]
+                            image_bytes = None
+                            mime_type = None
+                        elif len(row) == 4:
+                            # Format: [message_id, author, is_bot, msg]
                             message_id, author, is_bot, msg = row
                             message_id = int(message_id) if message_id is not None else None
-                        dq.append((message_id, str(author), bool(is_bot), shorten(str(msg))))
+                            image_bytes = None
+                            mime_type = None
+                        elif len(row) == 6:
+                            # New format: [message_id, author, is_bot, msg, image_b64, mime]
+                            message_id, author, is_bot, msg, image_b64, mime = row
+                            message_id = int(message_id) if message_id is not None else None
+                            # Decode base64 image if present
+                            if image_b64:
+                                try:
+                                    image_bytes = base64.b64decode(image_b64)
+                                    mime_type = mime if mime else None
+                                except Exception:
+                                    image_bytes = None
+                                    mime_type = None
+                            else:
+                                image_bytes = None
+                                mime_type = None
+                        else:
+                            continue
+
+                        dq.append(
+                            (
+                                message_id,
+                                str(author),
+                                bool(is_bot),
+                                shorten(str(msg)),
+                                image_bytes,
+                                mime_type,
+                            )
+                        )
                     except Exception:
                         continue
                 if dq:
@@ -63,8 +99,15 @@ class ChatLogsRepository(IChatLogsRepository):
             out: Dict[str, list] = {}
             for chat_id, dq in self._logs.items():
                 out[str(chat_id)] = [
-                    [message_id, author, bool(is_bot), msg]
-                    for (message_id, author, is_bot, msg) in dq
+                    [
+                        message_id,
+                        author,
+                        bool(is_bot),
+                        msg,
+                        base64.b64encode(img_bytes).decode("ascii") if img_bytes else None,
+                        mime,
+                    ]
+                    for (message_id, author, is_bot, msg, img_bytes, mime) in dq
                 ]
 
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,14 +124,18 @@ class ChatLogsRepository(IChatLogsRepository):
         is_bot: bool,
         text: str,
         message_id: Optional[int] = None,
+        image_bytes: Optional[bytes] = None,
+        mime_type: Optional[str] = None,
     ) -> None:
         """Add message to chat logs."""
-        self._logs[chat_id].append((message_id, author, is_bot, shorten(text)))
+        self._logs[chat_id].append(
+            (message_id, author, is_bot, shorten(text), image_bytes, mime_type)
+        )
         self._save()
 
     def get_recent_messages(
         self, chat_id: int, limit: int
-    ) -> List[Tuple[Optional[int], str, bool, str]]:
+    ) -> List[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]]:
         """Get recent messages."""
         messages = list(self._logs.get(chat_id, deque()))
         return messages[-limit:] if limit else messages
@@ -104,7 +151,7 @@ class ChatLogsRepository(IChatLogsRepository):
             Tuple of (author, is_bot, text) or None if not found
         """
         messages = list(self._logs.get(chat_id, deque()))
-        for msg_id, author, is_bot, text in messages:
+        for msg_id, author, is_bot, text, _, _ in messages:
             if msg_id == message_id:
                 return (author, is_bot, text)
         return None

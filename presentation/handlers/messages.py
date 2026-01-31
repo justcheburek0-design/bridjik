@@ -92,6 +92,18 @@ def _has_image(message: types.Message) -> Tuple[bool, bool, bool, bool, bool]:
     )
     has_sticker = bool(getattr(message, "sticker", None))
     has_animation = bool(getattr(message, "animation", None))
+
+    # Check if document is video/gif (some GIFs sent as video/mp4 documents)
+    if not has_animation and getattr(message, "document", None):
+        doc = message.document
+        mime_type = str(getattr(doc, "mime_type", "")).lower()
+        filename = str(getattr(doc, "file_name", "")).lower()
+        # Treat video/mp4 and image/gif documents as animations
+        if mime_type in ("video/mp4", "video/mpeg", "image/gif") or filename.endswith(
+            (".gif", ".mp4", ".webm")
+        ):
+            has_animation = True
+
     has_image = has_photo or has_image_doc or has_sticker or has_animation
 
     return has_image, has_photo, has_image_doc, has_sticker, has_animation
@@ -212,7 +224,11 @@ def _should_answer(message: types.Message, bot_username: str) -> bool:
 
 
 def _save_incoming_message(
-    chat_logs_repo: IChatLogsRepository, message: types.Message, text: str
+    chat_logs_repo: IChatLogsRepository,
+    message: types.Message,
+    text: str,
+    image_bytes: Optional[bytes] = None,
+    mime_type: Optional[str] = None,
 ) -> None:
     """Save incoming message to chat logs.
 
@@ -220,6 +236,8 @@ def _save_incoming_message(
         chat_logs_repo: Chat logs repository
         message: Telegram message
         text: Message text
+        image_bytes: Optional image data
+        mime_type: Optional MIME type for image
     """
     chat_id = message.chat.id
     author = get_author_name(message, "unknown")
@@ -257,7 +275,9 @@ def _save_incoming_message(
                 reply_info = f"[Ответ на {replied_id}] "
                 final_text = reply_info + final_text
 
-    chat_logs_repo.add_message(chat_id, author, is_bot, final_text, message_id)
+    chat_logs_repo.add_message(
+        chat_id, author, is_bot, final_text, message_id, image_bytes, mime_type
+    )
 
 
 @router.message()
@@ -350,7 +370,7 @@ async def auto_reply(
 
         # Save incoming message to logs BEFORE generating AI response
         # This ensures the current message is included in chat context
-        _save_incoming_message(chat_logs_repo, message, prompt)
+        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
 
         # Define status update callback
         async def update_status(text: str):
@@ -384,8 +404,24 @@ async def auto_reply(
         # Save the bot's answer to logs with message_id
         chat_id = message.chat.id
         if sent_messages:
-            for msg_id, msg_text in sent_messages:
-                chat_logs_repo.add_message(chat_id, "Ассистент", True, msg_text, message_id=msg_id)
+            for msg_entry in sent_messages:
+                # Unpack: (message_id, text, image_bytes, mime_type)
+                if len(msg_entry) == 4:
+                    msg_id, msg_text, img_bytes, mime = msg_entry
+                else:
+                    # Fallback for old format
+                    msg_id, msg_text = msg_entry[:2]
+                    img_bytes, mime = None, None
+
+                chat_logs_repo.add_message(
+                    chat_id,
+                    "Ассистент",
+                    True,
+                    msg_text,
+                    message_id=msg_id,
+                    image_bytes=img_bytes,
+                    mime_type=mime,
+                )
         else:
             # Fallback if no messages were captured (should not happen if answer is not empty)
             chat_logs_repo.add_message(chat_id, "Ассистент", True, answer)

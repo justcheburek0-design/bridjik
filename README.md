@@ -3,7 +3,6 @@
 **Интеллектуальный Telegram бот-ассистент для Minecraft сервера с AI и базой знаний.**
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-25.01-green)](./CHANGELOG.md)
 
 ## 🌟 Возможности
 
@@ -166,7 +165,6 @@ isort .
 ## 📖 Документация
 
 - [Architecture](./docs/architecture.md) — детальное описание архитектуры
-- [CHANGELOG](./CHANGELOG.md) — история изменений
 - Docstrings на русском языке во всех модулях
 
 ## 📝 Лицензия

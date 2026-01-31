@@ -166,7 +166,7 @@ class MediaService:
 
                 # For other MIME types, try general image extraction
                 logger.debug("Sticker has MIME type: %s, attempting extraction", mime)
-                extracted = self._extract_gif_first_frame(content)
+                extracted = self._extract_gif_important_frame(content)
                 if extracted:
                     return (extracted, "image/png")
 
@@ -179,11 +179,24 @@ class MediaService:
     async def download_animation(self, message: types.Message) -> Optional[tuple[bytes, str]]:
         """Download animation/GIF from message. Returns (bytes, mime_type) or None."""
         try:
-            if not message.animation:
+            # Check for animation or video/mp4 document (GIFs sent as files)
+            if message.animation:
+                file_id = message.animation.file_id
+                mime = getattr(message.animation, "mime_type", None) or "video/mp4"
+            elif message.document:
+                doc = message.document
+                doc_mime = str(getattr(doc, "mime_type", "")).lower()
+                filename = str(getattr(doc, "file_name", "")).lower()
+                # Check if it's a video/gif document
+                if doc_mime in ("video/mp4", "video/mpeg", "image/gif") or filename.endswith(
+                    (".gif", ".mp4", ".webm")
+                ):
+                    file_id = doc.file_id
+                    mime = doc_mime or "video/mp4"
+                else:
+                    return None
+            else:
                 return None
-
-            file_id = message.animation.file_id
-            mime = getattr(message.animation, "mime_type", None) or "video/mp4"
 
             fobj = await self.bot.get_file(file_id)
             file_path = getattr(fobj, "file_path", None)
@@ -198,13 +211,13 @@ class MediaService:
 
                 content = resp.content
 
-                # Try to extract first frame from any animation/video
+                # Try to extract important frame from any animation/video
                 if mime == "image/gif":
-                    # For GIF, try to extract first frame
-                    extracted = self._extract_gif_first_frame(content)
+                    # For GIF, extract middle frame for better representation
+                    extracted = self._extract_gif_important_frame(content)
                     if extracted:
                         return (extracted, "image/png")
-                    logger.warning("Failed to extract GIF first frame, skipping")
+                    logger.warning("Failed to extract GIF frame, skipping")
                     return None
                 elif mime.startswith("video/"):
                     # For video files (MP4, WebM, etc.), try to extract first frame
@@ -220,7 +233,7 @@ class MediaService:
                     "Animation has MIME type: %s, attempting general image extraction",
                     mime,
                 )
-                extracted = self._extract_gif_first_frame(content)
+                extracted = self._extract_gif_important_frame(content)
                 if extracted:
                     return (extracted, "image/png")
 
@@ -229,6 +242,41 @@ class MediaService:
         except Exception:
             logger.exception("Failed to download animation")
             return None
+
+    async def _extract_sent_photo(
+        self, message: types.Message
+    ) -> tuple[Optional[bytes], Optional[str]]:
+        """Extract image bytes from a photo message that bot sent.
+
+        Args:
+            message: Message with photo
+
+        Returns:
+            Tuple of (image_bytes, mime_type) or (None, None)
+        """
+        try:
+            if not message.photo:
+                return (None, None)
+
+            # Get the largest photo size
+            photo = message.photo[-1]
+            file_id = photo.file_id
+
+            fobj = await self.bot.get_file(file_id)
+            file_path = getattr(fobj, "file_path", None)
+            if not file_path:
+                logger.warning("missing photo file_path")
+                return (None, None)
+
+            url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+            timeout = httpx.Timeout(30.0, connect=10.0, read=30.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                return (resp.content, "image/jpeg")
+        except Exception:
+            logger.exception("Failed to extract sent photo")
+            return (None, None)
 
     async def send_typing_action(self, chat_id: int) -> None:
         """Send typing action."""
@@ -290,8 +338,8 @@ class MediaService:
             logger.warning("Failed to convert WebP to PNG: %s", exc)
             return None
 
-    def _extract_gif_first_frame(self, gif_bytes: bytes) -> Optional[bytes]:
-        """Extract first frame from GIF and convert to PNG."""
+    def _extract_gif_important_frame(self, gif_bytes: bytes) -> Optional[bytes]:
+        """Extract important frame (middle) from GIF/animation and convert to PNG."""
         try:
             # Check if it's a valid image file (TGS stickers are not valid images)
             if gif_bytes[:4] == b"\x00\x00\x00\x14ftypheic":
@@ -300,12 +348,21 @@ class MediaService:
 
             img = Image.open(BytesIO(gif_bytes))
 
-            # Handle animated WEBP
+            # Handle animated images
             if hasattr(img, "is_animated") and img.is_animated:
-                logger.debug("Extracting first frame from animated image")
-                img.seek(0)
+                # Get the middle frame for better representation
+                try:
+                    n_frames = getattr(img, "n_frames", 1)
+                    middle_frame = n_frames // 2
+                    logger.debug(
+                        f"Extracting middle frame ({middle_frame}/{n_frames}) from animated image"
+                    )
+                    img.seek(middle_frame)
+                except Exception as e:
+                    logger.debug(f"Failed to seek middle frame, using first: {e}")
+                    img.seek(0)
 
-            # Get first frame (it's already selected by default)
+            # Convert to RGB for consistency
             if img.mode in ("RGBA", "LA", "P"):
                 # Create white background for transparent images
                 rgb_img = Image.new("RGB", img.size, (255, 255, 255))
@@ -318,7 +375,7 @@ class MediaService:
             img.save(output, format="PNG")
             return output.getvalue()
         except Exception as exc:
-            logger.warning("Failed to extract GIF first frame: %s", exc)
+            logger.warning("Failed to extract frame from animation: %s", exc)
             return None
 
     def _guess_image_extension(self, url: str, content_type: Optional[str]) -> str:
@@ -723,7 +780,7 @@ class MediaService:
                         last_text_msg = await safe_edit(parts[0])
 
                     if last_text_msg:
-                        sent_messages.append((last_text_msg.message_id, parts[0]))
+                        sent_messages.append((last_text_msg.message_id, parts[0], None, None))
                 except Exception:
                     logger.exception("failed to edit initial message with text")
                     try:
@@ -738,17 +795,10 @@ class MediaService:
                             pending_kb = None
 
                         if last_text_msg:
-                            sent_messages.append((last_text_msg.message_id, parts[0]))
+                            sent_messages.append((last_text_msg.message_id, parts[0], None, None))
                     except Exception:
                         logger.exception("failed to send fallback message")
 
-                for part in parts[1:]:
-                    try:
-                        last_text_msg = await safe_answer(part)
-                        if last_text_msg:
-                            sent_messages.append((last_text_msg.message_id, part))
-                    except Exception:
-                        logger.exception("failed to send message part")
             else:
                 for part in parts:
                     try:
@@ -772,7 +822,11 @@ class MediaService:
                 try:
                     m = await user_msg.answer_photo(photo=photo_arg)
                     if m:
-                        sent_messages.append((m.message_id, "[Изображение]"))
+                        # Extract image bytes from sent photo
+                        image_bytes, mime_type = await self._extract_sent_photo(m)
+                        sent_messages.append(
+                            (m.message_id, f"[find_photo:{payload}]", image_bytes, mime_type)
+                        )
                 except Exception:
                     logger.exception("failed to send photo: %s", payload)
             elif kind == "gen_photo":
@@ -783,7 +837,11 @@ class MediaService:
                 try:
                     m = await user_msg.answer_photo(photo=photo_arg)
                     if m:
-                        sent_messages.append((m.message_id, "[Сгенерированное изображение]"))
+                        # Extract image bytes from sent photo
+                        image_bytes, mime_type = await self._extract_sent_photo(m)
+                        sent_messages.append(
+                            (m.message_id, f"[gen_photo:{payload}]", image_bytes, mime_type)
+                        )
                 except Exception:
                     logger.exception("failed to send generated photo: %s", payload)
             elif kind == "sticker":
@@ -794,7 +852,7 @@ class MediaService:
                 try:
                     m = await user_msg.answer_sticker(sticker=sticker_id)
                     if m:
-                        sent_messages.append((m.message_id, "[Стикер]"))
+                        sent_messages.append((m.message_id, "[Стикер]", None, None))
                 except Exception:
                     logger.exception("failed to send sticker: %s", payload)
             elif kind == "kb":
@@ -834,7 +892,7 @@ class MediaService:
                                 )
                                 if m:
                                     sent_messages.append(
-                                        (m.message_id, f"[Голосовое: {voice_text}]")
+                                        (m.message_id, f"[Голосовое: {voice_text}]", None, None)
                                     )
                     except Exception:
                         logger.exception("failed to send voice message")
