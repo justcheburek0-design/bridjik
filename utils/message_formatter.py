@@ -8,8 +8,7 @@ from typing import Optional
 
 from aiogram import types
 
-from utils.message import get_media_description, get_message_text, get_reply_quote
-
+from utils.message import get_media_description
 
 
 def combine_text_and_media(text: str, media_desc: str) -> str:

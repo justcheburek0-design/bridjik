@@ -10,7 +10,6 @@ from aiogram.types import FSInputFile
 
 from core.config import Config
 from infrastructure.repositories.stickers import StickersRepository
-from presentation.keyboards import KeyboardBuilder
 
 logger = logging.getLogger(__name__)
 

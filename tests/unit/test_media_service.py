@@ -1,7 +1,9 @@
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from aiogram.types import BufferedInputFile, FSInputFile
+
 from application.services.media import MediaService
-from aiogram.types import FSInputFile, BufferedInputFile
 
 
 @pytest.fixture
@@ -17,7 +19,7 @@ def media_service():
     return service
 
 
-@pytest.mark.async_io
+@pytest.mark.asyncio
 async def test_resolve_photo_payload_url(media_service):
     """Test that _resolve_photo_payload returns the URL string if input is a URL."""
     url = "https://example.com/image.jpg"
@@ -25,7 +27,7 @@ async def test_resolve_photo_payload_url(media_service):
     assert result == url
 
 
-@pytest.mark.async_io
+@pytest.mark.asyncio
 async def test_resolve_photo_payload_local_file(media_service):
     """Test that _resolve_photo_payload returns FSInputFile if input matches a local file."""
     # Mock _find_photo_file to return a path
@@ -40,7 +42,7 @@ async def test_resolve_photo_payload_local_file(media_service):
         assert str(result.path) == "photos/test.jpg"
 
 
-@pytest.mark.async_io
+@pytest.mark.asyncio
 async def test_resolve_photo_payload_search(media_service):
     """Test that _resolve_photo_payload calls _search_image_online if not URL and not local file."""
     with patch.object(media_service, "_find_photo_file", return_value=None):

@@ -1,5 +1,6 @@
 """Chat logs repository implementation."""
 
+import asyncio
 import base64
 import json
 import logging
@@ -94,10 +95,18 @@ class ChatLogsRepository(IChatLogsRepository):
             logging.exception("Failed to load chat logs from JSON")
 
     def _save(self) -> None:
-        """Save chat logs to JSON file."""
+        """Save chat logs to JSON file.
+
+        Note: This is now run in a thread executor to avoid blocking the event loop.
+        """
         try:
             out: Dict[str, list] = {}
-            for chat_id, dq in self._logs.items():
+            # Copy keys first to avoid "dictionary changed size during iteration"
+            chat_ids = list(self._logs.keys())
+
+            for chat_id in chat_ids:
+                dq = self._logs[chat_id]
+                # list(dq) creates a shallow copy of the deque
                 out[str(chat_id)] = [
                     [
                         message_id,
@@ -107,7 +116,7 @@ class ChatLogsRepository(IChatLogsRepository):
                         base64.b64encode(img_bytes).decode("ascii") if img_bytes else None,
                         mime,
                     ]
-                    for (message_id, author, is_bot, msg, img_bytes, mime) in dq
+                    for (message_id, author, is_bot, msg, img_bytes, mime) in list(dq)
                 ]
 
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -116,6 +125,14 @@ class ChatLogsRepository(IChatLogsRepository):
             )
         except Exception:
             logging.exception("Failed to save chat logs to JSON")
+
+    def _schedule_save(self) -> None:
+        """Schedule save in background."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, self._save)
+        except RuntimeError:
+            self._save()
 
     def add_message(
         self,
@@ -131,7 +148,7 @@ class ChatLogsRepository(IChatLogsRepository):
         self._logs[chat_id].append(
             (message_id, author, is_bot, shorten(text), image_bytes, mime_type)
         )
-        self._save()
+        self._schedule_save()
 
     def get_recent_messages(
         self, chat_id: int, limit: int

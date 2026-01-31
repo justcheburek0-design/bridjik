@@ -1,6 +1,5 @@
 """Dependency Injection container."""
 
-from pathlib import Path
 
 from application.services.ai import AIService
 from application.services.game import GameService

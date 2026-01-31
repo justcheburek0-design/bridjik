@@ -1,7 +1,7 @@
 """Text formatters."""
 
 from html import escape
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 class Formatter:

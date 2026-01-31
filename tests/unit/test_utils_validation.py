@@ -1,6 +1,5 @@
 """Тесты для utils/validation.py."""
 
-import pytest
 
 from utils.validation import (
     is_valid_id,

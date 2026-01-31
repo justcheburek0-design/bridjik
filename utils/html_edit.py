@@ -1,7 +1,6 @@
 """HTML sanitization utilities."""
 
 import html
-import re
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 

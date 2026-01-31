@@ -1,6 +1,5 @@
 """Keyboard builders."""
 
-from html import escape
 
 from aiogram import types
 

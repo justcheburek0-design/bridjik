@@ -1,11 +1,9 @@
 ﻿"""Message handlers."""
 
 import logging
-import re
-from typing import Optional, Tuple
+from typing import Optional
 
 from aiogram import Router, types
-from aiogram.enums import ChatType
 
 from application.services.ai import AIService
 from application.services.media import MediaService
@@ -13,6 +11,7 @@ from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from application.services.user import UserService
+from domain.dtos import IncomingMessageDTO
 from domain.entities import Chat, MessageContext
 from domain.interfaces import (
     IChatLogsRepository,
@@ -21,38 +20,14 @@ from domain.interfaces import (
 )
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
-from utils.chat_helpers import (
-    get_author_name,
-    get_message_id,
-    get_replied_message_id,
-    is_bot_message,
-    is_group_chat,
-)
-from utils.error_handlers import safe_execute_async
+from utils.chat_helpers import get_message_id
 from utils.message import get_reply_quote
-from utils.message_formatter import build_message_text_for_save, combine_text_and_media
+from utils.message_formatter import build_message_text_for_save
 from utils.text import truncate_text
 
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-# Constants for message detection
-BOT_ADDRESS_RE = re.compile(
-    r"(?i)(?<!\w)(?:нейро-?бот(?:ик|яра)?|бот(?:ик|яра)?|бридж(?:ик)?)(?!\w)"
-)
-QUESTION_MARK_RE = re.compile(r"\?")
-INTERROGATIVE_RE = re.compile(
-    r"(?i)\b("
-    r"можно ли|кто может помочь|кто поможет|подскаж(?:и|ите)|помогите|нужна помощь|help|помощь"
-    r")\b"
-)
-COMMAND_RE = re.compile(
-    r"(?i)\b("
-    r"объясни|расскажи|скажи|подскажи|помоги|проверь|сделай|напиши|создай|найди|покажи|настрой"
-    r")\b"
-)
-NOISE_RE = re.compile(r"^\s*(?:[^\w\s]|[\w]{1,2})\s*$")
 
 # Status messages
 STATUS_PROCESSING = "⏳ <b>Думаю...</b>"
@@ -64,174 +39,6 @@ ERROR_MESSAGE = "Извини, не смог сформулировать отв
 SUBSCRIPTION_REQUIRED = "Подпишитесь на @MineBridgeOfficial, чтобы пользоваться бриджиком"
 
 
-def _get_message_text(message: types.Message) -> str:
-    """Extract text from message (text or caption).
-
-    Args:
-        message: Telegram message
-
-    Returns:
-        Text content or empty string
-    """
-    return (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
-
-
-def _has_image(message: types.Message) -> Tuple[bool, bool, bool, bool, bool]:
-    """Check if message contains image media.
-
-    Args:
-        message: Telegram message
-
-    Returns:
-        Tuple of (has_image, has_photo, has_image_doc, has_sticker, has_animation)
-    """
-    has_photo = bool(getattr(message, "photo", None))
-    has_image_doc = bool(
-        getattr(message, "document", None)
-        and str(getattr(message.document, "mime_type", "")).startswith("image/")
-    )
-    has_sticker = bool(getattr(message, "sticker", None))
-    has_animation = bool(getattr(message, "animation", None))
-
-    # Check if document is video/gif (some GIFs sent as video/mp4 documents)
-    if not has_animation and getattr(message, "document", None):
-        doc = message.document
-        mime_type = str(getattr(doc, "mime_type", "")).lower()
-        filename = str(getattr(doc, "file_name", "")).lower()
-        # Treat video/mp4 and image/gif documents as animations
-        if mime_type in ("video/mp4", "video/mpeg", "image/gif") or filename.endswith(
-            (".gif", ".mp4", ".webm")
-        ):
-            has_animation = True
-
-    has_image = has_photo or has_image_doc or has_sticker or has_animation
-
-    return has_image, has_photo, has_image_doc, has_sticker, has_animation
-
-
-async def _handle_voice_transcription(
-    message: types.Message, media_service: MediaService, gemini_api: GeminiAPI
-) -> Optional[str]:
-    """Handle voice message transcription.
-
-    Args:
-        message: Telegram message with voice
-        media_service: Media service
-        gemini_api: Gemini API client
-
-    Returns:
-        Transcribed text or None
-    """
-    try:
-        await media_service.send_typing_action(message.chat.id)
-        voice_data = await media_service.download_voice(message)
-        if voice_data:
-            audio_bytes, mime = voice_data
-            transcribed = await gemini_api.transcribe_voice(audio_bytes, mime)
-            return transcribed if transcribed else None
-    except Exception:
-        logger.exception("voice transcription flow failed")
-
-    return None
-
-
-async def _download_image_media(
-    message: types.Message,
-    media_service: MediaService,
-    has_sticker: bool,
-    has_animation: bool,
-    send_status: bool = True,
-) -> Tuple[Optional[bytes], Optional[str], Optional[types.Message]]:
-    """Download image media from message.
-
-    Args:
-        message: Telegram message
-        media_service: Media service
-        has_sticker: Whether message has sticker
-        has_animation: Whether message has animation
-        send_status: Whether to send status message (default: True)
-
-    Returns:
-        Tuple of (image_bytes, mime_type, status_message)
-    """
-    status_msg = None
-
-    if has_sticker:
-        if send_status:
-            status_msg = await message.reply(STATUS_STICKER)
-        image_data = await media_service.download_sticker(message)
-    elif has_animation:
-        if send_status:
-            status_msg = await message.reply(STATUS_ANIMATION)
-        image_data = await media_service.download_animation(message)
-    else:
-        if send_status:
-            status_msg = await message.reply(STATUS_IMAGE)
-        image_data = await media_service.download_image(message)
-
-    if image_data:
-        image_bytes, mime_type = image_data[0], image_data[1]
-        logger.info(
-            f"Downloaded image: {len(image_bytes) if image_bytes else 0} bytes, mime: {mime_type}"
-        )
-        return image_bytes, mime_type, status_msg
-    else:
-        logger.warning("Failed to download image, continuing with text only")
-        return None, None, status_msg
-
-
-def _should_answer(message: types.Message, bot_username: str) -> bool:
-    """Check if bot should answer in group chat.
-
-    Args:
-        message: Telegram message
-        bot_username: Bot username
-
-    Returns:
-        True if bot should answer
-    """
-    text = _get_message_text(message)
-
-    # If reply to bot's message - check if it's our bot
-    if message.reply_to_message and message.reply_to_message.from_user:
-        replied_user = message.reply_to_message.from_user
-        if is_bot_message(message.reply_to_message):
-            replied_username = getattr(replied_user, "username", "") or ""
-            if bot_username and replied_username == bot_username:
-                # Reply to our bot - definitely answer
-                return True
-            # Reply to other bot - don't answer unless other conditions match
-            # Continue checking other conditions below
-
-    # Check mentions
-    if message.entities and text:
-        for entity in message.entities:
-            if entity.type == "mention":
-                mention_text = text[entity.offset : entity.offset + entity.length]
-                if bot_username and mention_text.lstrip("@").lower() == bot_username.lower():
-                    return True
-
-    # Check bot address keywords
-    if BOT_ADDRESS_RE.search(text):
-        return True
-
-    # Check questions and commands
-    if NOISE_RE.match(text):
-        return False
-
-    score = 0
-    if QUESTION_MARK_RE.search(text):
-        score += 1
-    if INTERROGATIVE_RE.search(text):
-        score += 2
-    if COMMAND_RE.search(text):
-        score += 1
-    if len(text) >= 25:
-        score += 1
-
-    return score >= 4
-
-
 def _save_incoming_message(
     chat_logs_repo: IChatLogsRepository,
     message: types.Message,
@@ -241,18 +48,12 @@ def _save_incoming_message(
 ) -> None:
     """Save incoming message to chat logs.
 
-    Args:
-        chat_logs_repo: Chat logs repository
-        message: Telegram message
-        text: Message text
-        image_bytes: Optional image data
-        mime_type: Optional MIME type for image
+    TODO: Move this logic to a repository wrapper or service in future steps.
     """
-    logger.info(
-        f"_save_incoming_message called with: image_bytes={len(image_bytes) if image_bytes else 0} bytes, mime_type={mime_type}"
-    )
-
     chat_id = message.chat.id
+    # Use DTO or helper, but for now reuse existing headers
+    from utils.chat_helpers import get_author_name, is_bot_message
+
     author = get_author_name(message, "unknown")
     is_bot = is_bot_message(message)
     message_id = get_message_id(message)
@@ -309,99 +110,129 @@ async def auto_reply(
     history_repo: IHistoryRepository,
     config,
 ):
-    """Auto-reply with AI."""
-    prompt = _get_message_text(message)
-    has_image, has_photo, has_image_doc, has_sticker, has_animation = _has_image(message)
-    has_voice = bool(getattr(message, "voice", None))
-    user_id = getattr(message.from_user, "id", None)
+    """Auto-reply with AI using Strict Separation pattern."""
+    # 1. Create DTO from Telegram message
+    dto = IncomingMessageDTO.from_telegram(message)
 
-    # Determine if we should respond (before downloading media or transcribing)
-    chat_type = getattr(message.chat, "type", None)
-    should_respond = not is_group_chat(chat_type) or _should_answer(message, config.BOT_USERNAME)
+    # 2. Check Decision Logic (Service Layer)
+    should_respond = await ai_service.should_respond(dto, config.BOT_USERNAME)
 
-    # Voice transcription - only if we will respond
-    if has_voice and should_respond:
-        transcribed = await _handle_voice_transcription(message, media_service, gemini_api)
-        if transcribed:
-            prompt = transcribed
+    # Check manual freeze
+    if dto.user_id is not None and freezes_repo.is_frozen(dto.user_id):
+        should_respond = False
+        logger.info("Auto replies are temporarily frozen for user %s", dto.user_id)
 
-    # Download image/sticker/animation if present
-    # Always download (for logs), but send status only if we will respond
+    # 3. Media processing logic (if we are responding OR if we just need to save to logs)
+    # We download media if we are going to respond (to process it)
+    # OR if we want to save it to logs (currently logs support images).
+    # Existing logic saved images to logs even if not responding?
+    # "Always download (for logs), but send status only if we will respond" -> logic from old code.
+
     image_bytes = None
     mime_type = None
-    msg = None
-    if has_image:
-        image_bytes, mime_type, msg = await _download_image_media(
-            message, media_service, has_sticker, has_animation, send_status=should_respond
-        )
+    status_msg = None
 
-    # Check if empty message
-    if not prompt and not has_image:
-        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
-        return
+    if dto.has_image:
+        # Determine status message
+        status_text = STATUS_IMAGE
+        if getattr(message, "sticker", None):
+            status_text = STATUS_STICKER
+        elif getattr(message, "animation", None):
+            status_text = STATUS_ANIMATION
 
-    # Check freeze
-    if user_id is not None and freezes_repo.is_frozen(user_id):
-        logger.info("Auto replies are temporarily frozen for user %s", user_id)
-        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
-        return
+        if should_respond:
+            status_msg = await message.reply(status_text)
 
-    # If in group and shouldn't answer - save to logs and return
+        # Download logic
+        # We need to determine WHICH download method to use.
+        # This logic was previously in _download_image_media helper.
+        # Ideally MediaService should have `download_media(message)` generic method.
+        # For now, we manually branch to fail fast if needed, or we implement the helper back but smaller.
+
+        if getattr(message, "sticker", None):
+            res = await media_service.download_sticker(message)
+        elif getattr(message, "animation", None) or (
+            getattr(message, "document", None) and dto.has_image
+        ):
+            # DTO checked document mime type for us
+            res = await media_service.download_animation(message)
+        else:
+            res = await media_service.download_image(message)
+
+        if res:
+            image_bytes, mime_type = res
+            dto.image_bytes = image_bytes
+            dto.mime_type = mime_type
+
+    # Voice handling
+    if dto.has_voice and should_respond:
+        # Transcribe
+        await media_service.send_typing_action(message.chat.id)
+        if not status_msg:
+            status_msg = await message.reply(STATUS_VOICE)
+
+        voice_data = await media_service.download_voice(message)
+        if voice_data:
+            v_bytes, v_mime = voice_data
+            transcribed = await gemini_api.transcribe_voice(v_bytes, v_mime)
+            if transcribed:
+                dto.text = transcribed  # Update DTO with transcribed text
+
+    # 4. If shouldn't respond -> Save to logs and exit
     if not should_respond:
-        logger.info("Skipped message without bot mention in group")
-        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
+        if not dto.text and not image_bytes:
+            return  # Empty message, nothing to log
+
+        _save_incoming_message(chat_logs_repo, message, dto.text, image_bytes, mime_type)
         return
 
-    # Check subscription
-    if not await subscription_service.is_subscribed(user_id):
+    # Check subscription (Business Rule)
+    if not await subscription_service.is_subscribed(dto.user_id):
         await message.reply(SUBSCRIPTION_REQUIRED)
-        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
+        _save_incoming_message(chat_logs_repo, message, dto.text, image_bytes, mime_type)
         return
 
+    # 5. Process Response
     try:
         await media_service.send_typing_action(message.chat.id)
 
-        # Prepare message context
+        # Create entities
         user = user_service.create_user_from_telegram(message.from_user)
         chat = Chat(
             id=message.chat.id,
-            type=str(chat_type) if chat_type else "unknown",
+            type=dto.chat_type,
             title=getattr(message.chat, "title", None),
         )
 
-        if not msg:
-            msg = await message.reply(STATUS_VOICE if has_voice else STATUS_PROCESSING)
+        if not status_msg:
+            status_msg = await message.reply(STATUS_PROCESSING)
 
         # Load system prompt
         system_prompt = strings_service.load_system_prompt_for_chat(message.chat)
 
-        # Build message context with RAG
+        # Create Context
         context = await MessageContext.create_with_rag(
-            prompt=prompt,
+            prompt=dto.text,
             user=user,
             chat=chat,
             rag_service=rag_service,
-            has_image=has_image,
+            has_image=bool(image_bytes),
             image_bytes=image_bytes,
             mime_type=mime_type,
         )
 
-        # Save incoming message to logs BEFORE generating AI response
-        # This ensures the current message is included in chat context
-        logger.info(
-            f"Saving message with image: {len(image_bytes) if image_bytes else 0} bytes, mime: {mime_type}"
-        )
-        _save_incoming_message(chat_logs_repo, message, prompt, image_bytes, mime_type)
+        # Save Incoming to logs
+        _save_incoming_message(chat_logs_repo, message, dto.text, image_bytes, mime_type)
 
-        # Define status update callback
+        # Callback for status updates
         async def update_status(text: str):
             try:
-                if msg:
-                    await msg.edit_text(text)
+                if status_msg:
+                    await status_msg.edit_text(text)
             except Exception:
                 pass
 
-        # Get AI response
+        # Generate Answer
         answer = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
@@ -414,28 +245,26 @@ async def auto_reply(
 
         answer = truncate_text(answer, config.MAX_OUTPUT_LENGTH)
 
-        # Send response with media tag support
+        # Send Answer
         sent_messages = await media_service.long_text(
-            msg,
+            status_msg,
             message,
             answer,
             tts_callback=ai_service.generate_speech if config.ENABLE_TTS else None,
         )
 
-        # Save the bot's answer to logs with message_id
-        chat_id = message.chat.id
+        # Log Assistant Answer
         if sent_messages:
             for msg_entry in sent_messages:
                 # Unpack: (message_id, text, image_bytes, mime_type)
                 if len(msg_entry) == 4:
                     msg_id, msg_text, img_bytes, mime = msg_entry
                 else:
-                    # Fallback for old format
                     msg_id, msg_text = msg_entry[:2]
                     img_bytes, mime = None, None
 
                 chat_logs_repo.add_message(
-                    chat_id,
+                    message.chat.id,
                     "Ассистент",
                     True,
                     msg_text,
@@ -443,14 +272,10 @@ async def auto_reply(
                     image_bytes=img_bytes,
                     mime_type=mime,
                 )
-        else:
-            # Fallback if no messages were captured (should not happen if answer is not empty)
-            chat_logs_repo.add_message(chat_id, "Ассистент", True, answer)
-
     except Exception as e:
         logger.exception("Error in auto_reply")
         try:
-            if msg:
-                await msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
+            if status_msg:
+                await status_msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
         except Exception:
             pass

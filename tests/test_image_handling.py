@@ -1,10 +1,11 @@
 """Test for image handling in chat logs and AI context."""
 
-import pytest
-from infrastructure.repositories.chat_logs import ChatLogsRepository
-from application.services.ai import AIService
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
+
+from infrastructure.repositories.chat_logs import ChatLogsRepository
 
 
 def test_chat_logs_with_images():

@@ -4,8 +4,6 @@ import logging
 
 from aiogram import Bot, types
 
-from core.exceptions import SubscriptionRequiredError
-
 
 class SubscriptionService:
     """Service for checking user subscriptions."""

@@ -3,7 +3,7 @@
 import base64
 import json
 import logging
-import tempfile
+import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable, List, Optional, Tuple
 
@@ -12,6 +12,7 @@ from aiogram import types
 from openai import APIError, AsyncOpenAI, RateLimitError
 
 from core.config import Config
+from domain.dtos import IncomingMessageDTO
 from domain.entities import MessageContext
 from domain.interfaces import IChatLogsRepository, IHistoryRepository
 from infrastructure.external.mb_api import MineBridgeAPI
@@ -19,22 +20,33 @@ from infrastructure.external.mc_api import MinecraftAPI
 from utils.chat_helpers import (
     get_author_name,
     get_message_id,
-    get_replied_message_id,
     is_bot_message,
-    is_group_chat,
 )
 from utils.html_edit import remove as remove_html
 from utils.message import get_message_text, get_reply_quote
-from utils.message_formatter import (
-    format_chat_history_entry,
-    format_chat_log_entry,
-)
 
 logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
 TEMPERATURE = 0.7
+
+# Regex patterns for intent detection
+BOT_ADDRESS_RE = re.compile(
+    r"(?i)(?<!\w)(?:нейро-?бот(?:ик|яра)?|бот(?:ик|яра)?|бридж(?:ик)?)(?!\w)"
+)
+QUESTION_MARK_RE = re.compile(r"\?")
+INTERROGATIVE_RE = re.compile(
+    r"(?i)\b("
+    r"можно ли|кто может помочь|кто поможет|подскаж(?:и|ите)|помогите|нужна помощь|help|помощь"
+    r")\b"
+)
+COMMAND_RE = re.compile(
+    r"(?i)\b("
+    r"объясни|расскажи|скажи|подскажи|помоги|проверь|сделай|напиши|создай|найди|покажи|настрой"
+    r")\b"
+)
+NOISE_RE = re.compile(r"^\s*(?:[^\w\s]|[\w]{1,2})\s*$")
 
 
 class AIService:
@@ -63,6 +75,51 @@ class AIService:
         self.tavily_api = tavily_api
         self.config = config
         self.stickers_repo = stickers_repo
+
+    async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
+        """Check if bot should respond to the message."""
+        # Check basic noise
+        if NOISE_RE.match(dto.text):
+            return False
+
+        # Private chats: always answer (unless noise)
+        if dto.chat_type == "private":
+            return True
+
+        # Group chats: check triggers
+
+        # 1. Reply to bot
+        if dto.original_message.reply_to_message:
+            reply = dto.original_message.reply_to_message
+            if reply.from_user:
+                replied_username = getattr(reply.from_user, "username", "") or ""
+                if bot_username and replied_username == bot_username:
+                    return True
+
+        # 2. Mentions
+        if dto.original_message.entities and dto.text:
+            for entity in dto.original_message.entities:
+                if entity.type == "mention":
+                    mention_text = dto.text[entity.offset : entity.offset + entity.length]
+                    if bot_username and mention_text.lstrip("@").lower() == bot_username.lower():
+                        return True
+
+        # 3. Keywords / Address
+        if BOT_ADDRESS_RE.search(dto.text):
+            return True
+
+        # 4. Scoring system for implied questions
+        score = 0
+        if QUESTION_MARK_RE.search(dto.text):
+            score += 1
+        if INTERROGATIVE_RE.search(dto.text):
+            score += 2
+        if COMMAND_RE.search(dto.text):
+            score += 1
+        if len(dto.text) >= 25:
+            score += 1
+
+        return score >= 4
 
     async def complete(
         self,

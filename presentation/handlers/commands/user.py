@@ -6,12 +6,10 @@ import time
 from aiogram import Router, types
 from aiogram.filters import Command
 
-from application.services.subscription import SubscriptionService
 from application.services.user import UserService
 from domain.interfaces import IFreezesRepository
 from presentation.decorators import handle_errors
 from presentation.keyboards import KeyboardBuilder
-from utils.text import get_hour_string
 
 router = Router()
 
@@ -83,7 +81,7 @@ async def cmd_freeze(
     else:
         current_freeze_text = ""
 
-    text_body = f"❄️ Выбери <b>длительность заморозки автоответов</b>" + current_freeze_text
+    text_body = "❄️ Выбери <b>длительность заморозки автоответов</b>" + current_freeze_text
 
     await message.reply(
         text_body,

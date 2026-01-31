@@ -1,6 +1,5 @@
 """Тесты для utils/text.py."""
 
-import pytest
 
 from utils.text import get_hour_string, hash_text, shorten, truncate_text
 

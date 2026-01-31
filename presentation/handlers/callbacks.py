@@ -3,7 +3,6 @@
 import logging
 
 from aiogram import Router, types
-from aiogram.filters import StateFilter
 
 from application.services.ai import AIService
 from application.services.game import GameService
@@ -12,7 +11,7 @@ from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from application.services.user import UserService
-from domain.entities import Chat, MessageContext, User
+from domain.entities import Chat, MessageContext
 from domain.interfaces import IFreezesRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
