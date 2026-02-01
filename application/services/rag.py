@@ -186,12 +186,12 @@ class RAGService:
                 vecs.extend(await self._embed_batch(batch))
 
             if vecs:
-                V = np.array(vecs, dtype="float32")
-                norms = np.linalg.norm(V, axis=1, keepdims=True)
+                v = np.array(vecs, dtype="float32")
+                norms = np.linalg.norm(v, axis=1, keepdims=True)
                 norms[norms == 0.0] = 1.0
-                V /= norms
+                v /= norms
                 self._rag_chunks = all_chunks
-                self._rag_vecs = V
+                self._rag_vecs = v
                 meta_path.write_text(
                     json.dumps(self._rag_chunks, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
@@ -273,7 +273,7 @@ class RAGService:
             logger.debug(
                 "RAG: chunk scores: %s",
                 ", ".join([f"{i}:{float(adj[i]):.3f}" for i in selected_idx[:5]])
-                + (f" ... (+{len(selected_idx)-5} more)" if len(selected_idx) > 5 else ""),
+                + (f" ... (+{len(selected_idx) - 5} more)" if len(selected_idx) > 5 else ""),
             )
 
         return [(self._rag_chunks[i], float(adj[i])) for i in selected_idx]

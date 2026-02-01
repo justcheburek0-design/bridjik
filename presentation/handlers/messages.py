@@ -20,7 +20,7 @@ from domain.interfaces import (
 )
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
-from utils.chat_helpers import get_author_name, is_bot_message, get_message_id
+from utils.chat_helpers import get_author_name, get_message_id, is_bot_message
 from utils.message import get_reply_quote
 from utils.message_formatter import build_message_text_for_save
 from utils.text import truncate_text

@@ -1,19 +1,19 @@
 """Custom exceptions for the bot."""
 
 
-class BotException(Exception):
+class BotError(Exception):
     """Base exception for bot errors."""
 
     pass
 
 
-class SubscriptionRequiredError(BotException):
+class SubscriptionRequiredError(BotError):
     """User is not subscribed to required channel."""
 
     pass
 
 
-class APIError(BotException):
+class APIError(BotError):
     """External API error."""
 
     pass
@@ -37,7 +37,7 @@ class RateLimitError(APIError):
     pass
 
 
-class ConfigurationError(BotException):
+class ConfigurationError(BotError):
     """Configuration error."""
 
     pass

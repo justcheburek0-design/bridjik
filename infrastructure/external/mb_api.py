@@ -132,7 +132,7 @@ class MineBridgeAPI:
         self, player_data: Dict[str, Any], cache_key: str, use_cache: bool
     ) -> Optional[Dict[str, Any]]:
         """Process raw player data and cache it."""
-        URLS_START = {
+        urls_start = {
             "vk": {"url": "https://vk.com/", "label": "ВК"},
             "twitch": {"url": "https://www.twitch.tv/", "label": "Твич"},
             "youtube": {"url": "https://youtube.com/@", "label": "Ютуб"},
@@ -157,8 +157,8 @@ class MineBridgeAPI:
                 player["Дискорд"] = f"https://discord.com/users/{player_data['discordId']}"
 
             for key, val in player_data.get("urls", {}).items():
-                if key in URLS_START and val:
-                    player[URLS_START[key]["label"]] = f"{URLS_START[key]['url']}{val}"
+                if key in urls_start and val:
+                    player[urls_start[key]["label"]] = f"{urls_start[key]['url']}{val}"
 
             if use_cache:
                 self._set_cache(cache_key, player)

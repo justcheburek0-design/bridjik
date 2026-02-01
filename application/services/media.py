@@ -705,7 +705,7 @@ class MediaService:
 
         Returns list of (message_id, text_content) for all sent messages.
         """
-        CHUNK = 4000
+        chunk_size = 4000
         if text is None:
             text = ""
 
@@ -746,7 +746,7 @@ class MediaService:
                 return
             # Convert markdown to Telegram HTML
             s = markdown_to_telegram_html(s)
-            parts = [s[i : i + CHUNK] for i in range(0, len(s), CHUNK)]
+            parts = [s[i : i + chunk_size] for i in range(0, len(s), chunk_size)]
 
             async def safe_edit(text, reply_markup=None):
                 try:

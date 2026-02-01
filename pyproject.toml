@@ -69,6 +69,7 @@ exclude = '''
 
 [tool.ruff]
 line-length = 100
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
 exclude = [

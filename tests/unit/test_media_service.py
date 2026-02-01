@@ -31,9 +31,7 @@ async def test_resolve_photo_payload_url(media_service):
 async def test_resolve_photo_payload_local_file(media_service):
     """Test that _resolve_photo_payload returns FSInputFile if input matches a local file."""
     # Mock _find_photo_file to return a path
-    with patch.object(
-        media_service, "_find_photo_file", return_value="photos/test.jpg"
-    ) as mock_find:
+    with patch.object(media_service, "_find_photo_file", return_value="photos/test.jpg"):
         result = await media_service._resolve_photo_payload("test")
         assert isinstance(result, FSInputFile)
         # Check path string since FSInputFile stores it differently depending on version,
