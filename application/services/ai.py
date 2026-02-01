@@ -88,10 +88,8 @@ class AIService:
         # 1. Reply to bot
         if dto.original_message.reply_to_message:
             reply = dto.original_message.reply_to_message
-            if reply.from_user:
-                replied_username = getattr(reply.from_user, "username", "") or ""
-                if bot_username and replied_username == bot_username:
-                    return True
+            if reply.from_user and reply.from_user.is_bot:
+                return True
 
         # 2. Mentions
         if dto.original_message.entities and dto.text:
