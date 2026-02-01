@@ -1,6 +1,5 @@
 """Тесты для utils/validation.py."""
 
-
 from utils.validation import (
     is_valid_id,
     is_valid_string,

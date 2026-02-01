@@ -78,9 +78,7 @@ class IChatLogsRepository(ABC):
         pass
 
     @abstractmethod
-    def get_recent_messages(
-        self, chat_id: int, limit: int
-    ) -> List[
+    def get_recent_messages(self, chat_id: int, limit: int) -> List[
         Tuple[
             Optional[int],
             str,

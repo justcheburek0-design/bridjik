@@ -1,6 +1,5 @@
 """Тесты для domain/entities.py."""
 
-
 from domain.entities import Chat, MessageContext, User
 
 

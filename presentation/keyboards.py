@@ -1,6 +1,5 @@
 """Keyboard builders."""
 
-
 from aiogram import types
 
 from utils.text import get_hour_string

@@ -1,6 +1,5 @@
 """Dependency Injection container."""
 
-
 from application.services.ai import AIService
 from application.services.game import GameService
 from application.services.media import MediaService
