@@ -43,10 +43,95 @@ class StickersRepository:
         """Get sticker file_id by name (case-insensitive)."""
         return self._stickers.get(name.lower())
 
-    def add_sticker(self, name: str, file_id: str) -> None:
-        """Add or update a sticker."""
+    def find_by_name(self, name: str) -> Optional[str]:
+        """Find sticker name by searching case-insensitively.
+
+        Returns:
+            The original sticker name if found, None otherwise.
+        """
+        name_lower = name.lower()
+        for sticker_name in self._stickers.keys():
+            if sticker_name.lower() == name_lower:
+                return sticker_name
+        return None
+
+    def find_by_file_id(self, file_id: str) -> Optional[str]:
+        """Find sticker name by file_id.
+
+        Returns:
+            The sticker name if found, None otherwise.
+        """
+        for sticker_name, sticker_file_id in self._stickers.items():
+            if sticker_file_id == file_id:
+                return sticker_name
+        return None
+
+    def add_sticker(self, name: str, file_id: str) -> dict:
+        """Add a new sticker.
+
+        Args:
+            name: Sticker name/description
+            file_id: Telegram file_id
+
+        Returns:
+            dict with:
+                - success: bool
+                - message: str (error/success message)
+                - duplicate_type: Optional[str] ('name' or 'file_id')
+                - existing_name: Optional[str] (name of existing sticker)
+        """
+        # Check for duplicate by name (case-insensitive)
+        existing_name = self.find_by_name(name)
+        if existing_name:
+            return {
+                "success": False,
+                "message": f"Стикер с названием '{existing_name}' уже существует",
+                "duplicate_type": "name",
+                "existing_name": existing_name,
+            }
+
+        # Check for duplicate by file_id
+        existing_by_file_id = self.find_by_file_id(file_id)
+        if existing_by_file_id:
+            return {
+                "success": False,
+                "message": f"Этот стикер уже добавлен в базу под названием '{existing_by_file_id}'",
+                "duplicate_type": "file_id",
+                "existing_name": existing_by_file_id,
+            }
+
+        # Add new sticker
         self._stickers[name.lower()] = file_id
         self._save_stickers()
+
+        return {
+            "success": True,
+            "message": f"Стикер '{name}' успешно добавлен",
+            "duplicate_type": None,
+            "existing_name": None,
+        }
+
+    def update_sticker(self, name: str, file_id: str) -> dict:
+        """Update an existing sticker without duplicate checks.
+
+        Used for editing stickers where the name is already known to exist.
+
+        Args:
+            name: Sticker name/description
+            file_id: New Telegram file_id
+
+        Returns:
+            dict with success status and message
+        """
+        self._stickers[name.lower()] = file_id
+        self._save_stickers()
+
+        return {
+            "success": True,
+            "message": f"Стикер '{name}' обновлен",
+            "duplicate_type": None,
+            "existing_name": None,
+        }
 
     def delete_sticker(self, name: str) -> bool:
         """Delete a sticker. Returns True if deleted."""

@@ -340,8 +340,12 @@ class AIService:
 
                     if sticker_file_id:
                         try:
-                            self.stickers_repo.add_sticker(description, sticker_file_id)
-                            content = f"Стикер '{description}' успешно добавлен в базу данных!"
+                            result = self.stickers_repo.add_sticker(description, sticker_file_id)
+                            if result["success"]:
+                                content = result["message"] + " в базу данных!"
+                            else:
+                                # Duplicate found
+                                content = result["message"]
                         except Exception as e:
                             logger.exception("Failed to add sticker")
                             content = f"Ошибка при добавлении стикера: {str(e)}"

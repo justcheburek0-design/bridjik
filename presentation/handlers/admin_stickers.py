@@ -140,8 +140,11 @@ async def process_sticker_file(
     name = data["name"]
     file_id = message.sticker.file_id
 
-    stickers_repo.add_sticker(name, file_id)
-    await message.answer(f"✅ Стикер <code>{name}</code> успешно сохранен!")
+    result = stickers_repo.add_sticker(name, file_id)
+    if result["success"]:
+        await message.answer(f"✅ Стикер <code>{name}</code> успешно сохранен!")
+    else:
+        await message.answer(f"❌ {result['message']}")
     await state.clear()
 
 
@@ -222,8 +225,12 @@ async def process_edit_file(
     name = data["name"]
     file_id = message.sticker.file_id
 
-    stickers_repo.add_sticker(name, file_id)
-    await message.answer(f"✅ Стикер <code>{name}</code> обновлен!")
+    # When editing, use update_sticker to bypass duplicate checks
+    result = stickers_repo.update_sticker(name, file_id)
+    if result["success"]:
+        await message.answer(f"✅ Стикер <code>{name}</code> обновлен!")
+    else:
+        await message.answer(f"❌ {result['message']}")
     await state.clear()
 
 
