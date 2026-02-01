@@ -12,7 +12,7 @@ from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from application.services.user import UserService
 from domain.entities import Chat, MessageContext
-from domain.interfaces import IFreezesRepository
+from domain.interfaces import IChatLogsRepository, IFreezesRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
 from presentation.formatters import Formatter
@@ -36,6 +36,7 @@ async def callback_any(
     strings_service: StringsService,
     gemini_api: GeminiAPI,
     freezes_repo: IFreezesRepository,
+    chat_logs_repo: IChatLogsRepository,
     keyboard_builder: KeyboardBuilder,
     config,
 ):
@@ -157,9 +158,36 @@ async def callback_any(
                 answer = await ai_service.complete(context, system_prompt, message)
 
                 if tmp:
-                    await media_service.long_text(tmp, message, answer)
+                    sent_messages = await media_service.long_text(tmp, message, answer)
+
+                    # Сохранить отправленные сообщения в историю
+                    if sent_messages:
+                        for msg_entry in sent_messages:
+                            if len(msg_entry) == 4:
+                                msg_id, msg_text, img_bytes, mime = msg_entry
+                            else:
+                                msg_id, msg_text = msg_entry[:2]
+                                img_bytes, mime = None, None
+
+                            chat_logs_repo.add_message(
+                                chat_id,
+                                "Ассистент",
+                                True,
+                                msg_text,
+                                message_id=msg_id,
+                                image_bytes=img_bytes,
+                                mime_type=mime,
+                            )
                 else:
-                    await query.message.answer(answer) if query.message else None
+                    sent = await query.message.answer(answer) if query.message else None
+                    if sent:
+                        chat_logs_repo.add_message(
+                            chat_id,
+                            "Ассистент",
+                            True,
+                            answer,
+                            message_id=sent.message_id,
+                        )
 
             except Exception as e:
                 logger.exception(f"game:guess_object failed: {e}")

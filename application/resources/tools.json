@@ -20,7 +20,7 @@
     "type": "function",
     "function": {
       "name": "set_reaction",
-      "description": "Put a reaction (emoji) on a specific message. Use this when you want to express emotion about a user's message (e.g., set '👍' or '🔥').",
+      "description": "Put a reaction (emoji) on a specific message",
       "parameters": {
         "type": "object",
         "properties": {
@@ -42,7 +42,7 @@
     "type": "function",
     "function": {
       "name": "get_stickers",
-      "description": "Get list of available stickers. You can sometimes use sticker: [sticker:name]",
+      "description": "Get list of available stickers. You can use sticker: [sticker:name] (max 1 sticker for message)",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -143,21 +143,21 @@
     "type": "function",
     "function": {
       "name": "rename_sticker",
-      "description": "Переименовать существующий стикер в базе данных. Используй когда пользователь просит переименовать или изменить название стикера.",
+      "description": "Rename an existing sticker in the database. Use this when the user asks to rename or change the name of a sticker.",
       "parameters": {
         "type": "object",
         "properties": {
           "old_name": {
             "type": "string",
-            "description": "Текущее название стикера для переименования (опционально, если указан message_id)"
+            "description": "Current name of the sticker to rename (optional if message_id is provided)"
           },
           "new_name": {
             "type": "string",
-            "description": "Новое название стикера - краткое русское описание (2-4 слова), e.g. 'грустный кот', 'пепе смеется'"
+            "description": "New name for the sticker - a brief Russian description (2-4 words)"
           },
           "message_id": {
             "type": "integer",
-            "description": "ID сообщения со стикером (опционально, если old_name не указан)"
+            "description": "Telegram message ID of the sticker (optional if old_name is not provided)"
           }
         },
         "required": ["new_name"]
