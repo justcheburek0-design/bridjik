@@ -20,7 +20,7 @@
     "type": "function",
     "function": {
       "name": "set_reaction",
-      "description": "Put a reaction (emoji) on a specific message",
+      "description": "Put a reaction (emoji) on a specific message. Use every 5-10 message.",
       "parameters": {
         "type": "object",
         "properties": {
