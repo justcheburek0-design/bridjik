@@ -29,13 +29,14 @@ def test_chat_logs_with_images():
         messages = repo.get_recent_messages(123, 10)
         assert len(messages) == 1
 
-        msg_id, author, is_bot, text, img_bytes, mime = messages[0]
+        msg_id, author, is_bot, text, img_bytes, mime, file_id = messages[0]
         assert msg_id == 42
         assert author == "TestUser"
         assert is_bot is False
         assert text == "🖼️ Фото: Тестовая картинка"
         assert img_bytes == test_image_bytes
         assert mime == "image/png"
+        assert file_id is None
 
 
 def test_chat_logs_without_images():
@@ -52,10 +53,11 @@ def test_chat_logs_without_images():
         messages = repo.get_recent_messages(123, 10)
         assert len(messages) == 1
 
-        msg_id, author, is_bot, text, img_bytes, mime = messages[0]
+        msg_id, author, is_bot, text, img_bytes, mime, file_id = messages[0]
         assert msg_id == 42
         assert img_bytes is None
         assert mime is None
+        assert file_id is None
 
 
 def test_json_serialization_with_image_bytes():

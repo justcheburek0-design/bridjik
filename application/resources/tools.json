@@ -16,12 +16,12 @@
       }
     }
   },
-  
+
   {
     "type": "function",
     "function": {
       "name": "get_stickers",
-      "description": "Get list of available stickers. You can sometimes use sticker: [[sticker:name]]",
+      "description": "Get list of available stickers. You can sometimes use sticker: [sticker:name]",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -94,6 +94,27 @@
           }
         },
         "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "add_sticker",
+      "description": "Add a new sticker to the database. Analyze the sticker's visual content and generate a brief Russian description (2-4 words) of what is depicted or the emotion conveyed. Use this when user asks to add/save/remember a sticker.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Brief Russian description of the sticker (2-4 words), e.g. 'грустный кот', 'пепе смеется', 'лайк'"
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Telegram message ID of the sticker to add"
+          }
+        },
+        "required": ["description", "message_id"]
       }
     }
   }

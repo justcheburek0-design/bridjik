@@ -322,7 +322,7 @@ class Container:
 ### Генерация изображения через AI
 
 ```
-1. AI генерирует ответ с placeholder [[gen_photo:описание]]
+1. AI генерирует ответ с placeholder [gen_photo:описание]
    ↓
 2. MediaService.long_text() обнаруживает placeholder
    ↓
@@ -336,7 +336,7 @@ class Container:
 ### Поиск изображения из интернета
 
 ```
-1. AI генерирует ответ с placeholder [[find_photo:запрос]]
+1. AI генерирует ответ с placeholder [find_photo:запрос]
    ↓
 2. MediaService.long_text() обнаруживает placeholder
    ↓

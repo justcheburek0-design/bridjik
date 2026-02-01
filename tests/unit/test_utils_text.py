@@ -1,6 +1,5 @@
 """Тесты для utils/text.py."""
 
-
 from utils.text import get_hour_string, hash_text, shorten, truncate_text
 
 
@@ -46,20 +45,20 @@ class TestTruncateText:
 
     def test_text_with_tag_before_cutpoint(self):
         """Текст с тегом до точки обрезки."""
-        text = "Текст [[photo:image.jpg]] ещё текст" * 10
+        text = "Текст [find_photo:image.jpg] ещё текст" * 10
         result = truncate_text(text, max_length=50)
         assert "..." in result
 
     def test_text_with_tag_at_cutpoint(self):
         """Тег на точке обрезки - обрезается перед тегом."""
-        text = "Начало " + "[[photo:image.jpg]]" + " продолжение" * 100
+        text = "Начало " + "[find_photo:image.jpg]" + " продолжение" * 100
         result = truncate_text(text, max_length=20)
         # Должна обрезаться перед тегом
-        assert "[[" not in result or result.count("[[") == result.count("]]")
+        assert "[" not in result or result.count("[") == result.count("]")
 
     def test_preserves_complete_tags(self):
         """Сохраняет целостность тегов."""
-        text = "Text [[sticker:pack:123]] more text"
+        text = "Text [sticker:pack:123] more text"
         result = truncate_text(text, max_length=100)
         assert result == text
 

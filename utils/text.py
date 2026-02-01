@@ -31,17 +31,17 @@ def shorten(text: str, limit: int = 700) -> str:
 
 
 def truncate_text(text: str, max_length: int = 2000) -> str:
-    """Обрезает текст до максимальной длины с учётом тегов [[...]].
-
-    Функция пытается сохранить целостность специальных тегов в формате [[type:payload]].
+    """Обрезает текст до максимальной длины с учётом тегов [...].
+    Функция пытается сохранить целостность специальных тегов в формате [type:payload].
     Если точка обрезки попадает внутрь тега, текст обрезается перед началом тега.
 
     Поддерживаемые типы тегов:
-    - [[photo:...]] - фотография
-    - [[sticker:...]] - стикер
-    - [[kb:...]] - база знаний
-    - [[guess:...]] - угадайка
-    - [[voice:...]] - голосовое сообщение
+    - [find_photo:...] - поиск фотографии
+    - [gen_photo:...] - генерация фотографии
+    - [sticker:...] - стикер
+    - [kb:...] - база знаний
+    - [guess:...] - угадайка
+    - [voice:...] - голосовое сообщение
 
     Args:
         text: Текст для обрезки
@@ -53,7 +53,7 @@ def truncate_text(text: str, max_length: int = 2000) -> str:
     Examples:
         >>> truncate_text("Короткий текст", 100)
         "Короткий текст"
-        >>> long_text = "Текст " + "[[photo:image.jpg]] " * 100
+        >>> long_text = "Текст " + "[find_photo:image.jpg] " * 100
         >>> result = truncate_text(long_text, 50)
         >>> "..." in result
         True
@@ -64,8 +64,10 @@ def truncate_text(text: str, max_length: int = 2000) -> str:
     if len(text) <= max_length:
         return text
 
-    # Паттерн для поиска тегов в формате [[type:payload]]
-    tag_re = re.compile(r"\[\[(photo|sticker|kb|guess|voice):([^\]]+)\]\]", re.IGNORECASE)
+    # Паттерн для поиска тегов в формате [type:payload]
+    tag_re = re.compile(
+        r"\[(find_photo|gen_photo|sticker|kb|guess|voice):([^\]]+)\]", re.IGNORECASE
+    )
 
     # Точка обрезки
     cut_point = max_length

@@ -84,8 +84,13 @@ def _save_incoming_message(
                 reply_info = f"[Ответ на {replied_id}] "
                 final_text = reply_info + final_text
 
+    # Получить file_id стикера, если есть
+    file_id = None
+    if message.sticker:
+        file_id = message.sticker.file_id
+
     chat_logs_repo.add_message(
-        chat_id, author, is_bot, final_text, message_id, image_bytes, mime_type
+        chat_id, author, is_bot, final_text, message_id, image_bytes, mime_type, file_id
     )
 
 

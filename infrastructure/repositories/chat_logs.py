@@ -18,9 +18,12 @@ class ChatLogsRepository(IChatLogsRepository):
     def __init__(self, file_path: Path, max_messages: int = 12):
         self.file_path = file_path
         self.max_messages = max_messages
-        # Store: (message_id, author, is_bot, text, image_bytes, mime_type)
+        # Store: (message_id, author, is_bot, text, image_bytes, mime_type, file_id)
         self._logs: Dict[
-            int, Deque[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]]
+            int,
+            Deque[
+                Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str], Optional[str]]
+            ],
         ] = defaultdict(lambda: deque(maxlen=max_messages))
         self._load()
 
@@ -37,9 +40,11 @@ class ChatLogsRepository(IChatLogsRepository):
                 except Exception:
                     continue
 
-                dq: Deque[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]] = (
-                    deque(maxlen=self.max_messages)
-                )
+                dq: Deque[
+                    Tuple[
+                        Optional[int], str, bool, str, Optional[bytes], Optional[str], Optional[str]
+                    ]
+                ] = deque(maxlen=self.max_messages)
                 for row in items:
                     try:
                         # Skip if it's history format (dict)
@@ -60,8 +65,24 @@ class ChatLogsRepository(IChatLogsRepository):
                             image_bytes = None
                             mime_type = None
                         elif len(row) == 6:
-                            # New format: [message_id, author, is_bot, msg, image_b64, mime]
+                            # Old format: [message_id, author, is_bot, msg, image_b64, mime]
                             message_id, author, is_bot, msg, image_b64, mime = row
+                            message_id = int(message_id) if message_id is not None else None
+                            # Decode base64 image if present
+                            if image_b64:
+                                try:
+                                    image_bytes = base64.b64decode(image_b64)
+                                    mime_type = mime if mime else None
+                                except Exception:
+                                    image_bytes = None
+                                    mime_type = None
+                            else:
+                                image_bytes = None
+                                mime_type = None
+                            file_id = None
+                        elif len(row) == 7:
+                            # New format: [message_id, author, is_bot, msg, image_b64, mime, file_id]
+                            message_id, author, is_bot, msg, image_b64, mime, file_id = row
                             message_id = int(message_id) if message_id is not None else None
                             # Decode base64 image if present
                             if image_b64:
@@ -85,6 +106,7 @@ class ChatLogsRepository(IChatLogsRepository):
                                 shorten(str(msg)),
                                 image_bytes,
                                 mime_type,
+                                file_id if "file_id" in locals() else None,
                             )
                         )
                     except Exception:
@@ -115,8 +137,9 @@ class ChatLogsRepository(IChatLogsRepository):
                         msg,
                         base64.b64encode(img_bytes).decode("ascii") if img_bytes else None,
                         mime,
+                        file_id,
                     ]
-                    for (message_id, author, is_bot, msg, img_bytes, mime) in list(dq)
+                    for (message_id, author, is_bot, msg, img_bytes, mime, file_id) in list(dq)
                 ]
 
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,12 +166,24 @@ class ChatLogsRepository(IChatLogsRepository):
         message_id: Optional[int] = None,
         image_bytes: Optional[bytes] = None,
         mime_type: Optional[str] = None,
+        file_id: Optional[str] = None,
     ) -> None:
         """Add message to chat logs."""
         self._logs[chat_id].append(
-            (message_id, author, is_bot, shorten(text), image_bytes, mime_type)
+            (message_id, author, is_bot, shorten(text), image_bytes, mime_type, file_id)
         )
         self._schedule_save()
+
+    def get_file_id_by_message_id(self, chat_id: int, message_id: int) -> Optional[str]:
+        # Get file_id by message_id from chat logs.
+        if chat_id not in self._logs:
+            return None
+
+        for (msg_id, author, is_bot, msg, img_bytes, mime, file_id) in self._logs[chat_id]:
+            if msg_id == message_id and file_id:
+                return file_id
+
+        return None
 
     def get_recent_messages(
         self, chat_id: int, limit: int

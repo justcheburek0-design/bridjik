@@ -131,6 +131,9 @@ class AIService:
         """Generate AI completion for given context."""
         full_system_prompt = system_prompt
 
+        # Store message for tool execution (e.g., add_sticker needs sticker file_id)
+        self._current_message = message
+
         user_input, original_chat_context = await self._build_user_input(context, message)
         messages = self._build_messages(
             full_system_prompt, user_input, context, original_chat_context
@@ -281,6 +284,70 @@ class AIService:
                     content = self.tavily_api.format_results(search_data)
                 else:
                     content = "Failed to perform web search"
+            elif name == "add_sticker":
+                description = args.get("description", "").strip()
+                msg_id = args.get("message_id")
+
+                if not description:
+                    content = "Error: Description is required"
+                elif not msg_id:
+                    content = "Error: Message ID is required"
+                else:
+                    # Get sticker file_id from the message
+                    sticker_file_id = None
+
+                    # Check if current message has sticker with matching ID
+                    if self._current_message and hasattr(self._current_message, "message_id"):
+                        if self._current_message.message_id == msg_id and hasattr(
+                            self._current_message, "sticker"
+                        ):
+                            if self._current_message.sticker:
+                                sticker_file_id = self._current_message.sticker.file_id
+
+                    # If not found in current message, try to find in chat logs by message_id
+                    if not sticker_file_id and self._current_message:
+                        chat_id = self._current_message.chat.id
+
+                        # Try to get file_id directly from chat logs
+                        sticker_file_id = self.chat_logs_repo.get_file_id_by_message_id(
+                            chat_id, msg_id
+                        )
+
+                        # If not found, check nearby messages in order: -1, +1, -2, +2
+                        if not sticker_file_id:
+                            for offset in [-1, 1, -2, 2]:
+                                nearby_id = msg_id + offset
+                                sticker_file_id = self.chat_logs_repo.get_file_id_by_message_id(
+                                    chat_id, nearby_id
+                                )
+                                if sticker_file_id:
+                                    logger.info(
+                                        f"Sticker found at nearby message_id={nearby_id} (offset {offset} from {msg_id})"
+                                    )
+                                    break
+
+                        # If still not found, check if user replied to a sticker message
+                        if not sticker_file_id and (
+                            hasattr(self._current_message, "reply_to_message")
+                            and self._current_message.reply_to_message
+                            and hasattr(self._current_message.reply_to_message, "sticker")
+                            and self._current_message.reply_to_message.sticker
+                        ):
+                            if self._current_message.reply_to_message.message_id == msg_id:
+                                sticker_file_id = (
+                                    self._current_message.reply_to_message.sticker.file_id
+                                )
+
+                    if sticker_file_id:
+                        try:
+                            self.stickers_repo.add_sticker(description, sticker_file_id)
+                            content = f"Стикер '{description}' успешно добавлен в базу данных!"
+                        except Exception as e:
+                            logger.exception("Failed to add sticker")
+                            content = f"Ошибка при добавлении стикера: {str(e)}"
+                    else:
+                        content = f"Не удалось найти стикер с message_id={msg_id}. Убедитесь, что это сообщение со стикером."
+
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"
@@ -647,8 +714,8 @@ class AIService:
         if recent:
             recent_messages = []
             for msg_data in recent:
-                # Unpack: (message_id, author, is_bot, text, image_bytes, mime_type)
-                message_id, author, is_bot, text, image_bytes, mime_type = msg_data
+                # Unpack: (message_id, author, is_bot, text, image_bytes, mime_type, file_id)
+                message_id, author, is_bot, text, image_bytes, mime_type, file_id = msg_data
                 msg_dict = {
                     "message_id": message_id,
                     "author": author,

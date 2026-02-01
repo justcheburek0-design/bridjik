@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Media tag regex
 MEDIA_TAG_RE = re.compile(
-    r"\[\[(find_photo|gen_photo|sticker|kb|guess|voice):([^\]]+)\]\]", re.IGNORECASE
+    r"\[(find_photo|gen_photo|sticker|kb|guess|voice):([^\]]+)\]", re.IGNORECASE
 )
 
 _MAX_IMAGE_BYTES = 9.5 * 1024 * 1024
@@ -888,7 +888,8 @@ class MediaService:
                 try:
                     m = await user_msg.answer_sticker(sticker=sticker_id)
                     if m:
-                        sent_messages.append((m.message_id, "[Стикер]", None, None))
+                        # Use sticker name from database for logging
+                        sent_messages.append((m.message_id, f"[sticker:{payload}]", None, None))
                 except Exception:
                     logger.exception("failed to send sticker: %s", payload)
             elif kind == "kb":
