@@ -13,11 +13,7 @@ from application.services.subscription import SubscriptionService
 from application.services.user import UserService
 from domain.dtos import IncomingMessageDTO
 from domain.entities import Chat, MessageContext
-from domain.interfaces import (
-    IChatLogsRepository,
-    IFreezesRepository,
-    IHistoryRepository,
-)
+from domain.interfaces import IChatLogsRepository, IFreezesRepository, IHistoryRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
 from utils.chat_helpers import get_author_name, get_message_id, is_bot_message

@@ -17,11 +17,7 @@ from domain.entities import MessageContext
 from domain.interfaces import IChatLogsRepository, IHistoryRepository
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.mc_api import MinecraftAPI
-from utils.chat_helpers import (
-    get_author_name,
-    get_message_id,
-    is_bot_message,
-)
+from utils.chat_helpers import get_author_name, get_message_id, is_bot_message
 from utils.html_edit import remove as remove_html
 from utils.message import get_message_text, get_reply_quote
 
@@ -374,7 +370,6 @@ class AIService:
                         # User choice: "say that it is already there".
                         # But we don't know if we (the bot) put it there or someone else.
                         # So just try to set it.
-
                         # Note: set_message_reaction replaces existing reactions by the bot.
                         # Efficient enough.
 
