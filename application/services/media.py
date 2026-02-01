@@ -904,17 +904,6 @@ class MediaService:
                         pending_kb = kb
                 except Exception:
                     logger.exception("failed to set reply markup (keyboard)")
-            elif kind == "guess":
-                try:
-                    chat_id = user_msg.chat.id
-                    pl = (payload or "").strip()
-                    if self.guesses_repo:
-                        if pl.lower() in ("forgot", "forget", "stop"):
-                            self.guesses_repo.clear_guess(chat_id)
-                        else:
-                            self.guesses_repo.set_guess(chat_id, pl)
-                except Exception:
-                    logger.exception("failed to process [guess:...] tag")
             elif kind == "voice":
                 if tts_callback:
                     try:

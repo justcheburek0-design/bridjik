@@ -17,6 +17,7 @@ from domain.entities import MessageContext
 from domain.interfaces import IChatLogsRepository, IHistoryRepository
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.mc_api import MinecraftAPI
+from infrastructure.repositories.guesses import GuessesRepository
 from utils.chat_helpers import get_author_name, get_message_id, is_bot_message
 from utils.html_edit import remove as remove_html
 from utils.message import get_message_text, get_reply_quote
@@ -405,6 +406,49 @@ class AIService:
                         except Exception as e:
                             logger.exception("Failed to rename sticker")
                             content = f"Ошибка при переименовании стикера: {str(e)}"
+
+            elif name == "set_guess":
+                obj = args.get("object", "").strip()
+
+                if not obj:
+                    content = "Error: Object is required"
+                elif not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    try:
+                        chat_id = self._current_message.chat.id
+
+                        # Use guesses_repo from MediaService
+
+                        config = Config()
+                        guesses_repo = GuessesRepository(config.GUESSES_FILE)
+
+                        # Set the guessed object
+                        guesses_repo.set_guess(chat_id, obj)
+                        content = f"Загадано: {obj}"
+                        logger.info(f"Set guess for chat {chat_id}: {obj}")
+                    except Exception as e:
+                        logger.exception("Failed to set guess")
+                        content = f"Ошибка при сохранении загадки: {str(e)}"
+
+            elif name == "clear_guess":
+                if not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    try:
+                        chat_id = self._current_message.chat.id
+                        # Import guesses repository from dependencies
+                        from core.dependencies import Dependencies
+
+                        deps = Dependencies()
+
+                        # Clear the guessed object
+                        deps.guesses_repo.clear_guess(chat_id)
+                        content = "Игра завершена! Загаданный предмет очищен."
+                        logger.info(f"Cleared guess for chat {chat_id}")
+                    except Exception as e:
+                        logger.exception("Failed to clear guess")
+                        content = f"Ошибка при очистке загадки: {str(e)}"
 
             elif name == "set_reaction":
                 emoji = args.get("emoji")

@@ -163,5 +163,34 @@
         "required": ["new_name"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_guess",
+      "description": "Set the guessed object for the 'Who am I?' game. Use this ONCE at the start of the game to save what you've chosen. The object will be saved and you'll see it in future messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "The Minecraft object you've chosen (mob, item, creature, GUI interface, event like rain, etc.) in Russian"
+          }
+        },
+        "required": ["object"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "clear_guess",
+      "description": "Clear the guessed object and end the 'Who am I?' game. Use this when the user has correctly guessed the object or wants to stop the game.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
   }
 ]

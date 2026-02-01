@@ -11,7 +11,6 @@ from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from application.services.user import UserService
-from domain.entities import Chat, MessageContext
 from domain.interfaces import IChatLogsRepository, IFreezesRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
@@ -109,110 +108,6 @@ async def callback_any(
             logger.exception("unfreeze: failed to edit confirmation message")
 
         await query.answer("🔑 Авто-ответы включены")
-        return
-
-    # Game callbacks
-    if data.startswith("game:"):
-        if data == "game:guess_object":
-            try:
-                await query.answer("Игра запущена")
-            except Exception:
-                pass
-
-            try:
-                user_id = query.from_user.id
-                chat_id = message.chat.id if message else user_id
-
-                # Build game prompt
-                game_prompt = (
-                    "Начинай игру 'Кто я?'. Выбери в уме один предмет из майнкрафта (моб, предмет, существо, gui интерфейс, событие по типу дождя и другое). "
-                    "В свой первый ответ обязательно незаметно добавь служебную метку [guess:СЛОВО], где СЛОВО — выбранный предмет на русском языке, "
-                    "а в основном тексте не раскрывай его и предложи мне начинать угадывать. Предмет должен быть тяжёлым для отгадывания, не очевиден."
-                )
-
-                # Send typing action
-                await media_service.send_typing_action(chat_id)
-
-                # Load system prompt
-                system_prompt = (
-                    strings_service.load_system_prompt_for_chat(message.chat)
-                    if message
-                    else "Ты — бот MineBridge, помощник игроков Minecraft-сервера. Отвечай кратко, дружелюбно и по делу."
-                )
-
-                # Create message context with RAG
-                user = user_service.create_user_from_telegram(query.from_user)
-                chat = Chat(
-                    id=chat_id,
-                    type=str(getattr(message.chat, "type", "private")) if message else "private",
-                )
-
-                context = await MessageContext.create_with_rag(
-                    prompt=game_prompt, user=user, chat=chat, rag_service=rag_service
-                )
-
-                # Send game start message
-                tmp = await message.reply("🎲 Запускаю игру...") if message else None
-
-                # Get AI response
-                answer = await ai_service.complete(context, system_prompt, message)
-
-                if tmp:
-                    sent_messages = await media_service.long_text(tmp, message, answer)
-
-                    # Сохранить отправленные сообщения в историю
-                    if sent_messages:
-                        for msg_entry in sent_messages:
-                            if len(msg_entry) == 4:
-                                msg_id, msg_text, img_bytes, mime = msg_entry
-                            else:
-                                msg_id, msg_text = msg_entry[:2]
-                                img_bytes, mime = None, None
-
-                            chat_logs_repo.add_message(
-                                chat_id,
-                                "Ассистент",
-                                True,
-                                msg_text,
-                                message_id=msg_id,
-                                image_bytes=img_bytes,
-                                mime_type=mime,
-                            )
-                else:
-                    sent = await query.message.answer(answer) if query.message else None
-                    if sent:
-                        chat_logs_repo.add_message(
-                            chat_id,
-                            "Ассистент",
-                            True,
-                            answer,
-                            message_id=sent.message_id,
-                        )
-
-            except Exception as e:
-                logger.exception(f"game:guess_object failed: {e}")
-                try:
-                    if message:
-                        await message.reply("Не удалось запустить игру. Попробуйте ещё раз.")
-                except Exception:
-                    pass
-            return
-
-        elif data == "game:guess_stop":
-            try:
-                await query.answer("Останавливаю игру")
-            except Exception:
-                pass
-
-            try:
-                if message:
-                    game_service.stop_guess_game(message.chat.id)
-                    await message.reply("Игра завершена. Чтобы начать заново — /game.")
-            except Exception:
-                logger.exception("game:guess_stop failed")
-            return
-
-        await query.answer()
         return
 
     # Subscription check

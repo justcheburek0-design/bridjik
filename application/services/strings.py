@@ -42,7 +42,7 @@ class StringsService:
             logger.exception("Failed to read prompt from %s", path)
             return ""
 
-    def load_system_prompt_for_chat(self, chat: types.Chat) -> str:
+    def load_system_prompt_for_chat(self, chat: types.Chat, guesses_repo=None) -> str:
         """Load chat-specific system prompt text, falling back to default."""
         try:
             if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
@@ -51,6 +51,11 @@ class StringsService:
                     text = self._read_txt_prompt(group_path)
                     if text:
                         logger.debug("Loaded group prompt from %s", group_path)
+                        # Check if game is active and add to prompt
+                        if guesses_repo:
+                            guessed_obj = guesses_repo.get_guess(chat.id)
+                            if guessed_obj:
+                                text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на воп росы пользователя о загаданном предмете, помогая ему угадать."
                         return text
 
             default_path = self.config.PROMPTS_DIR / "default.txt"
@@ -58,10 +63,23 @@ class StringsService:
                 text = self._read_txt_prompt(default_path)
                 if text:
                     logger.debug("Loaded default prompt")
+                    # Check if game is active and add to prompt
+                    if guesses_repo:
+                        guessed_obj = guesses_repo.get_guess(chat.id)
+                        if guessed_obj:
+                            text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
                     return text
         except FileNotFoundError:
             logger.warning("Prompt .txt file not found; using builtin fallback")
         except Exception:
             logger.exception("Failed to load .txt prompt")
 
-        return "Ты — бот MineBridge, помощник игроков Minecraft-сервера. Отвечай кратко, дружелюбно и по делу."
+        base_text = "Ты — бот MineBridge, помощник игроков Minecraft-сервера. Отвечай кратко, дружелюбно и по делу."
+
+        # Check if game is active and add to prompt
+        if guesses_repo:
+            guessed_obj = guesses_repo.get_guess(chat.id)
+            if guessed_obj:
+                base_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
+
+        return base_text

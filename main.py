@@ -7,7 +7,7 @@ import sys
 
 from core.dependencies import Container
 from presentation.handlers import admin_stickers, callbacks, messages
-from presentation.handlers.commands import admin, game, info, server, start, user
+from presentation.handlers.commands import admin, info, server, start, user
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -107,7 +107,6 @@ def register_handlers(container: Container):
     dp.include_router(user.router)
     dp.include_router(info.router)
     dp.include_router(server.router)
-    dp.include_router(game.router)
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
 

@@ -114,4 +114,5 @@ class Container:
             "history_repo": self.history_repo,
             "chat_logs_repo": self.chat_logs_repo,
             "stickers_repo": self.stickers_repo,
+            "guesses_repo": self.guesses_repo,
         }

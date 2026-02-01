@@ -104,6 +104,7 @@ async def auto_reply(
     freezes_repo: IFreezesRepository,
     chat_logs_repo: IChatLogsRepository,
     history_repo: IHistoryRepository,
+    guesses_repo,
     config,
 ):
     """Auto-reply with AI using Strict Separation pattern."""
@@ -200,7 +201,9 @@ async def auto_reply(
             status_msg = await message.reply(STATUS_PROCESSING)
 
         # Load system prompt
-        system_prompt = strings_service.load_system_prompt_for_chat(message.chat)
+        system_prompt = strings_service.load_system_prompt_for_chat(
+            message.chat, guesses_repo=guesses_repo
+        )
 
         # Create Context
         context = await MessageContext.create_with_rag(
