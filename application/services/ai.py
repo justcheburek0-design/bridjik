@@ -437,13 +437,13 @@ class AIService:
                 else:
                     try:
                         chat_id = self._current_message.chat.id
-                        # Import guesses repository from dependencies
-                        from core.dependencies import Dependencies
 
-                        deps = Dependencies()
+                        # Use GuessesRepository directly (already imported globally)
+                        config = Config()
+                        guesses_repo = GuessesRepository(config.GUESSES_FILE)
 
                         # Clear the guessed object
-                        deps.guesses_repo.clear_guess(chat_id)
+                        guesses_repo.clear_guess(chat_id)
                         content = "Игра завершена! Загаданный предмет очищен."
                         logger.info(f"Cleared guess for chat {chat_id}")
                     except Exception as e:
