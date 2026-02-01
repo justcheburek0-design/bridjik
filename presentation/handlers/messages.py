@@ -275,3 +275,59 @@ async def auto_reply(
                 await status_msg.edit_text(f"<b>Что-то пошло не так</b> ⚠️\n{str(e)}")
         except Exception:
             pass
+
+
+@router.message_reaction()
+async def on_reaction_update(
+    update: types.MessageReactionUpdated,
+    chat_logs_repo: IChatLogsRepository,
+):
+    """Handle reaction updates."""
+    try:
+        chat_id = update.chat.id
+        message_id = update.message_id
+        user = update.user
+
+        if not user:
+            return
+
+        # Determine user name (who reacted)
+        # Use simple logic: username or first_name
+        author_name = user.username or user.first_name or "Unknown"
+
+        # Find the message in logs first to get current reactions
+        msg_data = None
+        for item in chat_logs_repo._logs.get(chat_id, []):
+            if item[0] == message_id:
+                msg_data = item
+                break
+
+        if not msg_data:
+            return
+
+        # item structure: (mid, author, is_bot, text, img, mime, fid, reactions)
+        current_reactions = msg_data[7]  # this is dict[int, list[str]]
+
+        # New reactions from this user
+        # update.new_reaction is a list of ReactionType
+        new_emojis = []
+        for react in update.new_reaction:
+            if hasattr(react, "emoji"):
+                new_emojis.append(react.emoji)
+            elif hasattr(react, "custom_emoji_id"):
+                # Represent custom emojis clearly
+                new_emojis.append(f"[{react.custom_emoji_id}]")
+
+        # Update our store
+        if new_emojis:
+            current_reactions[author_name] = new_emojis
+        else:
+            # User removed all reactions
+            if author_name in current_reactions:
+                del current_reactions[author_name]
+
+        # Commit changes
+        chat_logs_repo.update_reactions(chat_id, message_id, current_reactions)
+
+    except Exception:
+        logger.exception("Error handling reaction update")

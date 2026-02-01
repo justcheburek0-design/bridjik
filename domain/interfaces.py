@@ -65,10 +65,34 @@ class IChatLogsRepository(ABC):
         pass
 
     @abstractmethod
+    def update_reactions(
+        self, chat_id: int, message_id: int, reactions: dict[str, list[str]]
+    ) -> None:
+        """Update reactions for a message.
+
+        Args:
+            chat_id: Chat ID
+            message_id: Message ID
+            reactions: Dictionary mapping author_name to list of reaction emojis
+        """
+        pass
+
+    @abstractmethod
     def get_recent_messages(
         self, chat_id: int, limit: int
-    ) -> List[Tuple[Optional[int], str, bool, str, Optional[bytes], Optional[str]]]:
-        """Get recent messages. Returns list of (message_id, author, is_bot, text, image_bytes, mime_type) tuples."""
+    ) -> List[
+        Tuple[
+            Optional[int],
+            str,
+            bool,
+            str,
+            Optional[bytes],
+            Optional[str],
+            Optional[str],
+            dict[str, list[str]],
+        ]
+    ]:
+        """Get recent messages. returns (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)."""
         pass
 
     @abstractmethod

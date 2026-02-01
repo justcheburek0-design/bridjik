@@ -644,7 +644,7 @@ class MediaService:
     async def _resolve_photo_payload(
         self, payload: str
     ) -> Optional[Union[str, FSInputFile, BufferedInputFile]]:
-        """Convert [[photo:...]] placeholder to URL or file for sending."""
+        """Convert placeholder to URL or file for sending."""
         target = (payload or "").strip()
         if not target:
             return None
@@ -669,7 +669,7 @@ class MediaService:
         return p
 
     def _parse_keyboard_payload(self, payload: str) -> Optional[types.InlineKeyboardMarkup]:
-        """Parse [[kb:...]] payload into InlineKeyboardMarkup."""
+        """Parse payload into InlineKeyboardMarkup."""
         s = (payload or "").strip()
         if not s:
             return None
@@ -701,7 +701,7 @@ class MediaService:
         text: str,
         tts_callback: Optional[callable] = None,
     ) -> list[tuple[int, str]]:
-        """Send long text in parts with embedded photos by [[photo:...]] tags.
+        """Send long text in parts with embedded photos by tags.
 
         Returns list of (message_id, text_content) for all sent messages.
         """
@@ -914,7 +914,7 @@ class MediaService:
                         else:
                             self.guesses_repo.set_guess(chat_id, pl)
                 except Exception:
-                    logger.exception("failed to process [[guess:...]] tag")
+                    logger.exception("failed to process [guess:...] tag")
             elif kind == "voice":
                 if tts_callback:
                     try:

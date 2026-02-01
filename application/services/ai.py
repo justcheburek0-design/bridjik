@@ -252,7 +252,7 @@ class AIService:
                 content = json.dumps(data, ensure_ascii=False)
             elif name == "get_stickers":
                 stickers = list(self.stickers_repo.get_all_stickers().keys())
-                content = f"Available stickers: {', '.join(stickers)}"
+                content = ", ".join(stickers)
             elif name == "get_news":
                 limit = min(args.get("limit", 10), 20)
                 offset = args.get("offset", 0)
@@ -351,6 +351,45 @@ class AIService:
                             content = f"Ошибка при добавлении стикера: {str(e)}"
                     else:
                         content = f"Не удалось найти стикер с message_id={msg_id}. Убедитесь, что это сообщение со стикером."
+
+            elif name == "set_reaction":
+                emoji = args.get("emoji")
+                msg_id = args.get("message_id")
+
+                if not emoji:
+                    content = "Error: Emoji is required"
+                elif not msg_id:
+                    content = "Error: Message ID is required"
+                elif not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    # We need to access the bot to set reaction
+                    # The message object has .bot
+                    try:
+                        # Prepare reaction type
+                        from aiogram.types import ReactionTypeEmoji
+
+                        # Check if it's already set (optimize)
+                        # We can check chat_logs for our own reaction?
+                        # User choice: "say that it is already there".
+                        # But we don't know if we (the bot) put it there or someone else.
+                        # So just try to set it.
+
+                        # Note: set_message_reaction replaces existing reactions by the bot.
+                        # Efficient enough.
+
+                        await self._current_message.bot.set_message_reaction(
+                            chat_id=self._current_message.chat.id,
+                            message_id=msg_id,
+                            reaction=[ReactionTypeEmoji(emoji=emoji)],
+                        )
+                        content = f"Реакция {emoji} установлена!"
+                    except Exception as e:
+                        if "message is not modified" in str(e):
+                            content = f"Реакция {emoji} уже стоит."
+                        else:
+                            logger.exception("Failed to set reaction")
+                            content = f"Ошибка установки реакции: {str(e)}"
 
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
@@ -718,13 +757,35 @@ class AIService:
         if recent:
             recent_messages = []
             for msg_data in recent:
-                # Unpack: (message_id, author, is_bot, text, image_bytes, mime_type, file_id)
-                message_id, author, is_bot, text, image_bytes, mime_type, file_id = msg_data
+                # Unpack: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
+                (
+                    message_id,
+                    author,
+                    is_bot,
+                    text,
+                    image_bytes,
+                    mime_type,
+                    file_id,
+                    reactions,
+                ) = msg_data
+
+                # Format reactions string
+                # We have dict[int, list[str]], we want unique emojis
+                reaction_text = ""
+                if reactions:
+                    all_emojis = set()
+                    for user_emojis in reactions.values():
+                        for emoji in user_emojis:
+                            all_emojis.add(emoji)
+
+                    if all_emojis:
+                        reaction_text = f" [Реакции: {', '.join(sorted(all_emojis))}]"
+
                 msg_dict = {
                     "message_id": message_id,
                     "author": author,
                     "is_bot": is_bot,
-                    "text": text,
+                    "text": text + reaction_text,
                 }
 
                 # Include image data if present
