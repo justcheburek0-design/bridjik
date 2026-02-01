@@ -133,6 +133,86 @@ class StickersRepository:
             "existing_name": None,
         }
 
+    def find_similar_stickers(self, search_term: str, limit: int = 5) -> list[str]:
+        """Find stickers with names similar to the search term.
+
+        Args:
+            search_term: Term to search for (case-insensitive)
+            limit: Maximum number of results to return
+
+        Returns:
+            List of similar sticker names
+        """
+        search_lower = search_term.lower()
+        similar = []
+
+        for sticker_name in self._stickers.keys():
+            if search_lower in sticker_name:
+                similar.append(sticker_name)
+                if len(similar) >= limit:
+                    break
+
+        return similar
+
+    def rename_sticker(self, old_name: str, new_name: str) -> dict:
+        """Rename an existing sticker.
+
+        Args:
+            old_name: Current sticker name
+            new_name: New sticker name/description
+
+        Returns:
+            dict with:
+                - success: bool
+                - message: str (error/success message)
+                - similar_stickers: Optional[list] (suggested alternatives if not found)
+        """
+        # Find existing sticker (case-insensitive)
+        existing_name = self.find_by_name(old_name)
+        if not existing_name:
+            similar = self.find_similar_stickers(old_name)
+            if similar:
+                return {
+                    "success": False,
+                    "message": f"Стикер '{old_name}' не найден",
+                    "similar_stickers": similar,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Стикер '{old_name}' не найден в базе данных",
+                    "similar_stickers": None,
+                }
+
+        # Check if new name is already taken by a different sticker
+        new_name_existing = self.find_by_name(new_name)
+        if new_name_existing and new_name_existing.lower() != existing_name.lower():
+            return {
+                "success": False,
+                "message": f"Стикер с названием '{new_name_existing}' уже существует",
+                "similar_stickers": None,
+            }
+
+        # If new name is the same as old name (case-insensitive), nothing to do
+        if new_name.lower() == existing_name.lower():
+            return {
+                "success": True,
+                "message": f"Стикер уже называется '{existing_name}'",
+                "similar_stickers": None,
+            }
+
+        # Perform rename: get file_id, delete old entry, add new entry
+        file_id = self._stickers[existing_name.lower()]
+        del self._stickers[existing_name.lower()]
+        self._stickers[new_name.lower()] = file_id
+        self._save_stickers()
+
+        return {
+            "success": True,
+            "message": f"Стикер '{existing_name}' переименован в '{new_name}'",
+            "similar_stickers": None,
+        }
+
     def delete_sticker(self, name: str) -> bool:
         """Delete a sticker. Returns True if deleted."""
         name_lower = name.lower()

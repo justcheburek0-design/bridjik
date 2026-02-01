@@ -138,5 +138,30 @@
         "required": ["description", "message_id"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "rename_sticker",
+      "description": "Переименовать существующий стикер в базе данных. Используй когда пользователь просит переименовать или изменить название стикера.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "old_name": {
+            "type": "string",
+            "description": "Текущее название стикера для переименования (опционально, если указан message_id)"
+          },
+          "new_name": {
+            "type": "string",
+            "description": "Новое название стикера - краткое русское описание (2-4 слова), e.g. 'грустный кот', 'пепе смеется'"
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "ID сообщения со стикером (опционально, если old_name не указан)"
+          }
+        },
+        "required": ["new_name"]
+      }
+    }
   }
 ]

@@ -348,6 +348,64 @@ class AIService:
                     else:
                         content = f"Не удалось найти стикер с message_id={msg_id}. Убедитесь, что это сообщение со стикером."
 
+            elif name == "rename_sticker":
+                old_name = args.get("old_name", "").strip()
+                new_name = args.get("new_name", "").strip()
+                msg_id = args.get("message_id")
+
+                if not new_name:
+                    content = "Error: Новое название обязательно"
+                elif not old_name and not msg_id:
+                    content = "Error: Укажите либо старое название (old_name), либо ID сообщения (message_id)"
+                else:
+                    # If message_id provided, find sticker by file_id
+                    if msg_id and not old_name:
+                        sticker_file_id = None
+
+                        # Try to get file_id from chat logs
+                        if self._current_message:
+                            chat_id = self._current_message.chat.id
+                            sticker_file_id = self.chat_logs_repo.get_file_id_by_message_id(
+                                chat_id, msg_id
+                            )
+
+                            # Check nearby messages if not found
+                            if not sticker_file_id:
+                                for offset in [-1, 1, -2, 2]:
+                                    nearby_id = msg_id + offset
+                                    sticker_file_id = self.chat_logs_repo.get_file_id_by_message_id(
+                                        chat_id, nearby_id
+                                    )
+                                    if sticker_file_id:
+                                        logger.info(
+                                            f"Sticker found at nearby message_id={nearby_id} (offset {offset} from {msg_id})"
+                                        )
+                                        break
+
+                        if sticker_file_id:
+                            # Find sticker name by file_id
+                            old_name = self.stickers_repo.find_by_file_id(sticker_file_id)
+                            if not old_name:
+                                content = f"Стикер с message_id={msg_id} не найден в базе данных. Возможно, его нужно сначала добавить."
+                        else:
+                            content = f"Не удалось найти стикер с message_id={msg_id}. Убедитесь, что это сообщение со стикером."
+
+                    # Perform rename if we have old_name
+                    if old_name:
+                        try:
+                            result = self.stickers_repo.rename_sticker(old_name, new_name)
+                            if result["success"]:
+                                content = result["message"]
+                            else:
+                                content = result["message"]
+                                # Add similar suggestions if available
+                                if result.get("similar_stickers"):
+                                    similar_list = ", ".join(result["similar_stickers"])
+                                    content += f"\n\nВозможно, вы имели в виду: {similar_list}"
+                        except Exception as e:
+                            logger.exception("Failed to rename sticker")
+                            content = f"Ошибка при переименовании стикера: {str(e)}"
+
             elif name == "set_reaction":
                 emoji = args.get("emoji")
                 msg_id = args.get("message_id")
