@@ -27,13 +27,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
+      - name: Check code formatting with Black
+        run: |
+          black --check .
+
+      - name: Check import sorting with isort
+        run: |
+          isort --check-only .
+
       - name: Lint with Ruff
         run: |
           # Stop the build if there are Python syntax errors or undefined names
           # E9,F63,F7,F82 = syntax errors
-          ruff check . --select=E9,F63,F7,F82 --show-source
+          ruff check . --select=E9,F63,F7,F82
           # exit-zero treats all errors as warnings.
           ruff check . --exit-zero
+
+      - name: Type check with mypy
+        run: |
+          mypy . --ignore-missing-imports
+        continue-on-error: true
 
       - name: Test with pytest
         run: |
