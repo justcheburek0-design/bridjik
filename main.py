@@ -43,7 +43,17 @@ async def on_startup(container: Container):
 
         # Log bot restart to chat logs for all known chats
         restart_message = f"🔄 Бот перезагружен (версия {container.config.VERSION})"
+        restart_count = 0
         for chat_id in container.chat_logs_repo._logs.keys():
+            # Check if last message is already a restart message
+            recent = container.chat_logs_repo.get_recent_messages(chat_id, limit=1)
+            if recent:
+                last_msg = recent[-1]
+                # Format: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
+                last_text = last_msg[3] if len(last_msg) > 3 else ""
+                if last_text.startswith("🔄 Бот перезагружен"):
+                    continue  # Skip adding restart message if last message is already a restart
+
             container.chat_logs_repo.add_message(
                 chat_id=chat_id,
                 author="System",
@@ -51,7 +61,10 @@ async def on_startup(container: Container):
                 text=restart_message,
                 message_id=None,  # System message doesn't have Telegram message_id
             )
-        logger.info(f"Logged restart notification to {len(container.chat_logs_repo._logs)} chats")
+            restart_count += 1
+        logger.info(
+            f"Logged restart notification to {restart_count}/{len(container.chat_logs_repo._logs)} chats"
+        )
     except Exception:
         logger.exception("Failed to get bot info on startup")
 
