@@ -450,6 +450,61 @@ class AIService:
                         logger.exception("Failed to clear guess")
                         content = f"Ошибка при очистке загадки: {str(e)}"
 
+            elif name == "save_memory":
+                content_text = args.get("content", "").strip()
+                category = args.get("category", "other")
+                tags = args.get("tags", [])
+
+                if not content_text:
+                    content = "Error: Content is required"
+                elif not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    try:
+                        from infrastructure.repositories.memories import MemoryRepository
+
+                        chat_id = self._current_message.chat.id
+                        author_id = self._current_message.from_user.id
+
+                        memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
+                        memory_id = memory_repo.add_memory(
+                            chat_id=chat_id,
+                            category=category,
+                            content=content_text,
+                            tags=tags,
+                            author_id=author_id,
+                        )
+                        content = f"✅ Запомнил ({category}): {content_text[:50]}..."
+                        logger.info(f"Saved memory {memory_id} for chat {chat_id}")
+                    except Exception as e:
+                        logger.exception("Failed to save memory")
+                        content = f"Ошибка при сохранении: {str(e)}"
+
+            elif name == "delete_memory":
+                search_query = args.get("search_query", "").strip()
+
+                if not search_query:
+                    content = "Error: Search query is required"
+                elif not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    try:
+                        from infrastructure.repositories.memories import MemoryRepository
+
+                        chat_id = self._current_message.chat.id
+                        memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
+
+                        # Search and delete
+                        found = memory_repo.search_and_delete(chat_id, search_query)
+                        if found:
+                            content = f"🗑️ Удалил из памяти: {found['content'][:50]}..."
+                            logger.info(f"Deleted memory from chat {chat_id}: {search_query}")
+                        else:
+                            content = f"❌ Не нашел записи по запросу: {search_query}"
+                    except Exception as e:
+                        logger.exception("Failed to delete memory")
+                        content = f"Ошибка при удалении: {str(e)}"
+
             elif name == "set_reaction":
                 emoji = args.get("emoji")
                 msg_id = args.get("message_id")
@@ -626,6 +681,27 @@ class AIService:
             for item in input_data["knowledge_base"]:
                 kb_text += f"\n{item['content']}\n"
             system_content += kb_text
+
+        # Add memory context
+        if "memories" in input_data:
+            mem_text = "\n\n# Память о чате:\n"
+            for category, items in input_data["memories"].items():
+                if items:
+                    # Format category name nicely
+                    category_names = {
+                        "user_facts": "Факты о людях",
+                        "events": "События",
+                        "agreements": "Договоренности",
+                        "games": "Игры",
+                        "other": "Прочее",
+                    }
+                    category_display = category_names.get(
+                        category, category.replace("_", " ").title()
+                    )
+                    mem_text += f"\n## {category_display}:\n"
+                    for item in items:
+                        mem_text += f"- {item['content']}\n"
+            system_content += mem_text
 
         messages = [{"role": "system", "content": system_content}]
 

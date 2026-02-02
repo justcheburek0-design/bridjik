@@ -4,26 +4,21 @@ from domain.entities import Chat, MessageContext, User
 
 
 class TestUser:
-    """Тесты для сущности User."""
-
-    def test_get_display_name_with_psevdo(self):
-        """Приоритет у псевдонима."""
-        user = User(id=123, username="username", first_name="Иван", psevdo="Крутой игрок")
-        assert user.get_display_name() == "Крутой игрок"
+    """Тесты для User entity."""
 
     def test_get_display_name_with_first_name(self):
-        """Если нет псевдонима, используется first_name."""
-        user = User(id=123, username="username", first_name="Иван", psevdo=None)
+        """Если есть first_name, используется он."""
+        user = User(id=123, username="username", first_name="Иван")
         assert user.get_display_name() == "Иван"
 
     def test_get_display_name_with_username(self):
         """Если нет first_name, используется username."""
-        user = User(id=123, username="username", first_name=None, psevdo=None)
+        user = User(id=123, username="username", first_name=None)
         assert user.get_display_name() == "username"
 
     def test_get_display_name_fallback(self):
-        """Если ничего нет, возвращается 'Пользователь'."""
-        user = User(id=123, username=None, first_name=None, psevdo=None)
+        """Если ничего нет, используется 'Пользователь'."""
+        user = User(id=123, username=None, first_name=None)
         assert user.get_display_name() == "Пользователь"
 
 

@@ -18,13 +18,10 @@ class User:
     id: int
     username: Optional[str] = None
     first_name: Optional[str] = None
-    psevdo: Optional[str] = None
     is_bot: bool = False
 
     def get_display_name(self) -> str:
         """Get best display name for the user."""
-        if self.psevdo:
-            return self.psevdo
         if self.first_name:
             return self.first_name
         if self.username:
@@ -82,7 +79,9 @@ class MessageContext:
         try:
             import json
 
-            structured_context = await rag_service.build_structured_context(prompt, user.id)
+            structured_context = await rag_service.build_structured_context(
+                prompt, user.id, chat.id
+            )
             rag_context = json.dumps(structured_context, ensure_ascii=False)
         except Exception:
             logger.exception("RAG: failed to build structured context")

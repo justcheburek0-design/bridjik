@@ -10,9 +10,8 @@ from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
-from application.services.user import UserService
 from domain.dtos import IncomingMessageDTO
-from domain.entities import Chat, MessageContext
+from domain.entities import Chat, MessageContext, User
 from domain.interfaces import IChatLogsRepository, IFreezesRepository, IHistoryRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
@@ -95,7 +94,6 @@ def _save_incoming_message(
 async def auto_reply(
     message: types.Message,
     subscription_service: SubscriptionService,
-    user_service: UserService,
     ai_service: AIService,
     media_service: MediaService,
     rag_service: RAGService,
@@ -190,7 +188,12 @@ async def auto_reply(
         await media_service.send_typing_action(message.chat.id)
 
         # Create entities
-        user = user_service.create_user_from_telegram(message.from_user)
+        user = User(
+            id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            is_bot=message.from_user.is_bot,
+        )
         chat = Chat(
             id=message.chat.id,
             type=dto.chat_type,

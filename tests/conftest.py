@@ -26,15 +26,7 @@ def mock_config():
 @pytest.fixture
 def sample_user():
     """Пример пользователя для тестов."""
-    return User(id=12345, username="test_user", first_name="Тест", psevdo=None, is_bot=False)
-
-
-@pytest.fixture
-def sample_user_with_psevdo():
-    """Пользователь с псевдонимом."""
-    return User(
-        id=67890, username="another_user", first_name="Иван", psevdo="Крутой игрок", is_bot=False
-    )
+    return User(id=12345, username="test_user", first_name="Тест", is_bot=False)
 
 
 @pytest.fixture

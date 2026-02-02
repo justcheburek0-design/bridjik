@@ -6,7 +6,6 @@ from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
-from application.services.user import UserService
 from core.config import Config
 from infrastructure.bot import create_bot, create_dispatcher
 from infrastructure.external.gemini import GeminiAPI
@@ -19,7 +18,6 @@ from infrastructure.repositories.chat_logs import ChatLogsRepository
 from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.guesses import GuessesRepository
 from infrastructure.repositories.history import HistoryRepository
-from infrastructure.repositories.psevdos import PsevdoRepository
 from infrastructure.repositories.stickers import StickersRepository
 from presentation.formatters import Formatter
 from presentation.keyboards import KeyboardBuilder
@@ -46,7 +44,6 @@ class Container:
         self.chat_logs_repo = ChatLogsRepository(
             self.config.CHAT_LOGS_FILE, self.config.GROUP_MAX_MESSAGES
         )
-        self.psevdo_repo = PsevdoRepository(self.config.PSEVDO_FILE)
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.guesses_repo = GuessesRepository(self.config.GUESSES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
@@ -60,7 +57,6 @@ class Container:
 
         # Services
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
-        self.user_service = UserService(self.psevdo_repo)
         self.game_service = GameService(self.guesses_repo)
         self.ai_service = AIService(
             self.openai_client,
@@ -97,7 +93,6 @@ class Container:
             "config": self.config,
             "bot": self.bot,
             "subscription_service": self.subscription_service,
-            "user_service": self.user_service,
             "game_service": self.game_service,
             "ai_service": self.ai_service,
             "media_service": self.media_service,

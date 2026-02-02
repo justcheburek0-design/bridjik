@@ -55,7 +55,6 @@ class Config:
     DATA_DIR: Path = field(init=False)
     RAG_INDEX_DIR: Path = field(init=False)
     PROMPTS_DIR: Path = field(init=False)
-    PSEVDO_FILE: Path = field(init=False)
     HISTORY_FILE: Path = field(init=False)
     CHAT_LOGS_FILE: Path = field(init=False)
     FREEZES_FILE: Path = field(init=False)
@@ -96,18 +95,21 @@ class Config:
     # Stickers
     STICKERS_FILE: Path = field(init=False)
 
+    # Memories
+    MEMORIES_FILE: Path = field(init=False)
+
     def __post_init__(self):
         """Initialize computed paths."""
         self.KB_DIR = self.BASE_DIR / "kb"
         self.DATA_DIR = self.BASE_DIR / "data"
         self.RAG_INDEX_DIR = self.BASE_DIR / ".rag_cache"
         self.PROMPTS_DIR = self.BASE_DIR / "prompts"
-        self.PSEVDO_FILE = self.DATA_DIR / "psevdos.json"
         self.HISTORY_FILE = self.DATA_DIR / "chat_logs.json"
         self.CHAT_LOGS_FILE = self.DATA_DIR / "chat_logs.json"
         self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
         self.GUESSES_FILE = self.DATA_DIR / "guesses.json"
         self.STICKERS_FILE = self.DATA_DIR / "stickers.json"
+        self.MEMORIES_FILE = self.DATA_DIR / "memories.json"
         self.VOICES_DIR = self.BASE_DIR / "voices"
         self.TOOLS_FILE = self.BASE_DIR / "application" / "resources" / "tools.json"
 

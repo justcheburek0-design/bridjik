@@ -192,5 +192,49 @@
         "required": []
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "save_memory",
+      "description": "Save an important moment to chat memory. Use this when you need to remember a fact about a person, event, agreement, or other important information. Records should be informative and contain enough context.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Detailed description of what to remember (preferably more details for context understanding)"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["user_facts", "events", "agreements", "games", "other"],
+            "description": "Memory category: user_facts (facts about people), events (events), agreements (agreements), games (games), other (other)"
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags for search (people names, keywords)"
+          }
+        },
+        "required": ["content", "category"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_memory",
+      "description": "Delete a memory record by user request. Used when information is outdated or user asks to forget something.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_query": {
+            "type": "string",
+            "description": "Search query to find the record to delete"
+          }
+        },
+        "required": ["search_query"]
+      }
+    }
   }
 ]

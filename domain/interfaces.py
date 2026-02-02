@@ -99,17 +99,50 @@ class IChatLogsRepository(ABC):
         pass
 
 
-class IPsevdoRepository(ABC):
-    """Interface for user psevdonyms repository."""
+class IMemoryRepository(ABC):
+    """Interface for chat memory repository."""
 
     @abstractmethod
-    def set_psevdo(self, user_id: int, name: str) -> str:
-        """Set user psevdonym. Returns normalized name."""
+    def add_memory(
+        self,
+        chat_id: int,
+        category: str,
+        content: str,
+        tags: Optional[List[str]] = None,
+        author_id: Optional[int] = None,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """Add a memory record. Returns memory ID."""
         pass
 
     @abstractmethod
-    def get_psevdo(self, user_id: int) -> Optional[str]:
-        """Get user psevdonym."""
+    def delete_memory(self, chat_id: int, memory_id: str) -> bool:
+        """Delete a memory by ID. Returns True if found and deleted."""
+        pass
+
+    @abstractmethod
+    def get_memories_by_category(self, chat_id: int, category: str) -> List[dict]:
+        """Get all memories for a chat by category."""
+        pass
+
+    @abstractmethod
+    def search_memories(self, chat_id: int, query: str) -> List[dict]:
+        """Search memories by tags or content."""
+        pass
+
+    @abstractmethod
+    def search_and_delete(self, chat_id: int, query: str) -> Optional[dict]:
+        """Search for a memory and delete the first match. Returns deleted memory or None."""
+        pass
+
+    @abstractmethod
+    def get_all_memories(self, chat_id: int) -> List[dict]:
+        """Get all memories for a chat."""
+        pass
+
+    @abstractmethod
+    def get_memory_categories(self, chat_id: int) -> dict:
+        """Get memories grouped by category."""
         pass
 
 

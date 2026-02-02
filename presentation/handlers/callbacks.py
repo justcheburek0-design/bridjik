@@ -10,7 +10,6 @@ from application.services.media import MediaService
 from application.services.rag import RAGService
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
-from application.services.user import UserService
 from domain.interfaces import IChatLogsRepository, IFreezesRepository
 from infrastructure.external.gemini import GeminiAPI
 from presentation.decorators import handle_errors
@@ -27,7 +26,6 @@ router = Router()
 async def callback_any(
     query: types.CallbackQuery,
     subscription_service: SubscriptionService,
-    user_service: UserService,
     game_service: GameService,
     ai_service: AIService,
     media_service: MediaService,
@@ -42,7 +40,8 @@ async def callback_any(
     """Handle all callback queries."""
     data = (query.data or "").strip()
     message = query.message
-    username = user_service.get_display_name(query.from_user.id, query.from_user)
+    # Get display name directly from telegram user
+    username = query.from_user.first_name or query.from_user.username or "Пользователь"
 
     # Freeze callbacks
     if data.startswith("freeze:"):
