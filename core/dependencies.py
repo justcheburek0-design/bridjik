@@ -71,6 +71,7 @@ class Container:
             self.tavily_api,
             self.config,
             self.stickers_repo,
+            self.memory_repo,
         )
         self.media_service = MediaService(
             self.bot,

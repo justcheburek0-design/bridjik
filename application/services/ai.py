@@ -61,6 +61,7 @@ class AIService:
         tavily_api,
         config: Config,
         stickers_repo,
+        memory_repo,
     ):
         self.client = openai_client
         self.history_repo = history_repo
@@ -72,6 +73,7 @@ class AIService:
         self.tavily_api = tavily_api
         self.config = config
         self.stickers_repo = stickers_repo
+        self.memory_repo = memory_repo
 
     async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
         """Check if bot should respond to the message."""
@@ -461,13 +463,10 @@ class AIService:
                     content = "Error: Available only in message context"
                 else:
                     try:
-                        from infrastructure.repositories.memories import MemoryRepository
-
                         chat_id = self._current_message.chat.id
                         author_id = self._current_message.from_user.id
 
-                        memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
-                        memory_id = memory_repo.add_memory(
+                        memory_id = self.memory_repo.add_memory(
                             chat_id=chat_id,
                             category=category,
                             content=content_text,
@@ -489,13 +488,10 @@ class AIService:
                     content = "Error: Available only in message context"
                 else:
                     try:
-                        from infrastructure.repositories.memories import MemoryRepository
-
                         chat_id = self._current_message.chat.id
-                        memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
 
                         # Search and delete
-                        found = memory_repo.search_and_delete(chat_id, search_query)
+                        found = self.memory_repo.search_and_delete(chat_id, search_query)
                         if found:
                             content = f"🗑️ Удалил из памяти: {found['content'][:50]}..."
                             logger.info(f"Deleted memory from chat {chat_id}: {search_query}")
