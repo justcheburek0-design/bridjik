@@ -32,10 +32,10 @@ def _format_memory_item(memory: dict, truncate_length: int = 200) -> str:
     if len(content) > truncate_length:
         content = content[:truncate_length] + "..."
 
-    memory_id = memory["id"][:8]  # Show first 8 chars of ID
+    memory_id = memory["id"]  # Show first 8 chars of ID
     tags_str = ", ".join(memory.get("tags", [])) if memory.get("tags") else "нет тегов"
 
-    return f"  • ID: <code>{memory_id}...</code>\n    └ {content}\n    └ Теги: {tags_str}\n"
+    return f"  • ID: <code>{memory_id}</code>\n    └ {content}\n    └ Теги: {tags_str}\n"
 
 
 def _get_main_keyboard() -> types.InlineKeyboardMarkup:
@@ -275,7 +275,7 @@ async def process_delete(message: types.Message, state: FSMContext, memory_repo:
                 if memory_repo.delete_memory(chat_id, memory["id"]):
                     await message.answer(
                         f"✅ Запись удалена!\n"
-                        f"ID: <code>{memory['id'][:8]}...</code>\n"
+                        f"ID: <code>{memory['id']}</code>\n"
                         f"Чат: <code>{chat_id}</code>\n"
                         f"Категория: {memory['category']}",
                         reply_markup=types.InlineKeyboardMarkup(
@@ -295,7 +295,7 @@ async def process_delete(message: types.Message, state: FSMContext, memory_repo:
 
     if not found:
         await message.answer(
-            f'❌ Запись с ID "<code>{partial_id}...</code>" не найдена.',
+            f'❌ Запись с ID "<code>{partial_id}</code>" не найдена.',
             reply_markup=types.InlineKeyboardMarkup(
                 inline_keyboard=[
                     [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]

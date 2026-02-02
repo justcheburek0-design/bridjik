@@ -231,7 +231,7 @@ async def auto_reply(
                 pass
 
         # Generate Answer
-        answer = await ai_service.complete(
+        answer, memory_updates = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
             message=message,
@@ -242,6 +242,11 @@ async def auto_reply(
             answer = ERROR_MESSAGE
 
         answer = truncate_text(answer, config.MAX_OUTPUT_LENGTH)
+
+        # Add memory update notification if any
+        if memory_updates:
+            memory_info = "\n\n💡 <b>Память обновлена:</b> " + memory_updates[0]
+            answer += memory_info
 
         # Send Answer
         sent_messages = await media_service.long_text(

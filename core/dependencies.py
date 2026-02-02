@@ -60,6 +60,7 @@ class Container:
         # Services
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
         self.game_service = GameService(self.guesses_repo)
+        self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)
         self.ai_service = AIService(
             self.openai_client,
             self.history_repo,
@@ -72,6 +73,7 @@ class Container:
             self.config,
             self.stickers_repo,
             self.memory_repo,
+            self.rag_service,
         )
         self.media_service = MediaService(
             self.bot,
@@ -81,7 +83,6 @@ class Container:
             self.guesses_repo,
             self.openai_client,
         )
-        self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)
         self.strings_service = StringsService(self.config)
 
         # Presentation

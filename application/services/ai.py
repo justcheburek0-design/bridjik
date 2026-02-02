@@ -62,6 +62,7 @@ class AIService:
         config: Config,
         stickers_repo,
         memory_repo,
+        rag_service,
     ):
         self.client = openai_client
         self.history_repo = history_repo
@@ -74,6 +75,9 @@ class AIService:
         self.config = config
         self.stickers_repo = stickers_repo
         self.memory_repo = memory_repo
+        self.rag_service = rag_service
+        # Track memory updates for displaying to user
+        self._memory_updates = []
 
     async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
         """Check if bot should respond to the message."""
@@ -126,12 +130,18 @@ class AIService:
         system_prompt: str,
         message: Optional[types.Message] = None,
         on_tool_update: Optional[Callable[[str], Awaitable[None]]] = None,
-    ) -> str:
-        """Generate AI completion for given context."""
+    ) -> tuple[str, list[str]]:
+        """Generate AI completion for given context.
+
+        Returns:
+            tuple: (answer_text, memory_updates_list)
+        """
         full_system_prompt = system_prompt
 
         # Store message for tool execution (e.g., add_sticker needs sticker file_id)
         self._current_message = message
+        # Reset memory updates tracker
+        self._memory_updates = []
 
         user_input, original_chat_context = await self._build_user_input(context, message)
         messages = self._build_messages(
@@ -204,14 +214,14 @@ class AIService:
                 # No tool calls, process final response
                 text = self._process_response(response)
 
-                return text
+                return text, self._memory_updates
 
             # If loop limit reached, return what we have or error
-            return DEFAULT_ERROR_MESSAGE
+            return DEFAULT_ERROR_MESSAGE, self._memory_updates
 
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
-            return DEFAULT_ERROR_MESSAGE
+            return DEFAULT_ERROR_MESSAGE, self._memory_updates
 
     def _get_tools(self) -> List[dict]:
         """Get available tools definition."""
@@ -466,15 +476,52 @@ class AIService:
                         chat_id = self._current_message.chat.id
                         author_id = self._current_message.from_user.id
 
-                        memory_id = self.memory_repo.add_memory(
-                            chat_id=chat_id,
-                            category=category,
-                            content=content_text,
-                            tags=tags,
-                            author_id=author_id,
-                        )
-                        content = f"✅ Запомнил ({category}): {content_text[:50]}..."
-                        logger.info(f"Saved memory {memory_id} for chat {chat_id}")
+                        # Check for duplicates by tags
+                        duplicate_found = None
+                        if tags:
+                            existing_memories = self.memory_repo.get_all_memories(chat_id)
+                            tags_set = set(tag.lower() for tag in tags)
+
+                            for memory in existing_memories:
+                                existing_tags = set(tag.lower() for tag in memory.get("tags", []))
+                                # If at least 2 tags match or all tags match (for single tag case)
+                                if existing_tags and tags_set:
+                                    matches = tags_set & existing_tags
+                                    if len(matches) >= min(2, len(tags_set)):
+                                        duplicate_found = memory
+                                        break
+
+                        if duplicate_found:
+                            # Found duplicate by tags
+                            mem_id = duplicate_found["id"][:8]
+                            mem_content = duplicate_found["content"]
+                            mem_category = duplicate_found["category"]
+                            mem_tags = ", ".join(duplicate_found.get("tags", []))
+
+                            content = (
+                                f"❌ Такая запись уже существует:\n\n"
+                                f"[ID: {mem_id}...] ({mem_category})\n"
+                                f"{mem_content}\n"
+                                f"Теги: {mem_tags}\n\n"
+                                f"💡 Эта информация уже сохранена."
+                            )
+                            logger.info(
+                                f"Duplicate memory found for chat {chat_id} by tags {tags}, not adding"
+                            )
+                        else:
+                            # No duplicate found, add as usual
+                            memory_id = self.memory_repo.add_memory(
+                                chat_id=chat_id,
+                                category=category,
+                                content=content_text,
+                                tags=tags,
+                                author_id=author_id,
+                            )
+                            content = f"✅ Запомнил ({category}): {content_text[:50]}..."
+                            logger.info(f"Saved memory {memory_id} for chat {chat_id}")
+
+                            # Track memory update for user notification
+                            self._memory_updates.append(f"{content_text[:300]}...")
                     except Exception as e:
                         logger.exception("Failed to save memory")
                         content = f"Ошибка при сохранении: {str(e)}"

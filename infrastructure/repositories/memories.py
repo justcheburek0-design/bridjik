@@ -124,6 +124,75 @@ class MemoryRepository(IMemoryRepository):
 
         return results
 
+    async def find_similar_memories(
+        self,
+        chat_id: int,
+        content: str,
+        rag_service,
+        limit: int = 3,
+        similarity_threshold: float = 0.7,
+    ) -> List[tuple[dict, float]]:
+        """Find similar memories using semantic search via RAG.
+
+        Args:
+            chat_id: Chat ID to search within
+            content: Content to search for similar memories
+            rag_service: RAG service instance for embeddings
+            limit: Maximum number of similar memories to return
+            similarity_threshold: Minimum similarity score (0.0-1.0)
+
+        Returns:
+            List of tuples (memory_dict, similarity_score), sorted by similarity desc
+        """
+        if chat_id not in self._memories or not self._memories[chat_id]:
+            return []
+
+        try:
+            import numpy as np
+
+            # Get all memories for this chat
+            memories = self._memories[chat_id]
+            if not memories:
+                return []
+
+            # Get embeddings for query content and all memory contents
+            all_texts = [content] + [m["content"] for m in memories]
+            embeddings = await rag_service._embed_batch(all_texts)
+
+            if not embeddings or len(embeddings) != len(all_texts):
+                logger.warning("Failed to get embeddings for similarity search")
+                return []
+
+            # Query embedding is first
+            query_emb = np.array(embeddings[0], dtype="float32")
+            query_emb /= max(np.linalg.norm(query_emb), 1e-12)
+
+            # Memory embeddings are the rest
+            memory_embs = np.array(embeddings[1:], dtype="float32")
+            # Normalize each row
+            norms = np.linalg.norm(memory_embs, axis=1, keepdims=True)
+            norms = np.maximum(norms, 1e-12)
+            memory_embs /= norms
+
+            # Compute cosine similarities
+            similarities = memory_embs @ query_emb
+
+            # Find indices of memories above threshold
+            results = []
+            for idx, sim in enumerate(similarities):
+                if sim >= similarity_threshold:
+                    results.append((memories[idx], float(sim)))
+
+            # Sort by similarity descending
+            results.sort(key=lambda x: x[1], reverse=True)
+
+            # Return top N
+            return results[:limit]
+
+        except Exception as e:
+            logger.exception(f"Failed to find similar memories: {e}")
+            return []
+
     def search_and_delete(self, chat_id: int, query: str) -> Optional[dict]:
         """Search for a memory and delete the first match. Returns deleted memory or None."""
         results = self.search_memories(chat_id, query)
