@@ -203,7 +203,7 @@
         "properties": {
           "content": {
             "type": "string",
-            "description": "Detailed description of what to remember (preferably more details for context understanding)"
+            "description": "Detailed description of what to remember (preferably more details)"
           },
           "category": {
             "type": "string",
