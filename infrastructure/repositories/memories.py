@@ -154,3 +154,16 @@ class MemoryRepository(IMemoryRepository):
             categories[category].append(memory)
 
         return categories
+
+    def restore_from_json(self, json_content: str) -> bool:
+        """Restore memories from JSON string. Returns True on success."""
+        try:
+            data = json.loads(json_content)
+            # Convert string keys to integers
+            self._memories = {int(k): v for k, v in data.items()}
+            self._save()
+            logger.info(f"Restored memories for {len(self._memories)} chats")
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to restore memories: {e}")
+            return False

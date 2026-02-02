@@ -18,6 +18,7 @@ from infrastructure.repositories.chat_logs import ChatLogsRepository
 from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.guesses import GuessesRepository
 from infrastructure.repositories.history import HistoryRepository
+from infrastructure.repositories.memories import MemoryRepository
 from infrastructure.repositories.stickers import StickersRepository
 from presentation.formatters import Formatter
 from presentation.keyboards import KeyboardBuilder
@@ -47,6 +48,7 @@ class Container:
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.guesses_repo = GuessesRepository(self.config.GUESSES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
+        self.memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
 
         # External APIs
         self.mc_api = MinecraftAPI(self.config.MC_SERVER_HOST, self.config.MC_CACHE_TTL)
@@ -110,4 +112,5 @@ class Container:
             "chat_logs_repo": self.chat_logs_repo,
             "stickers_repo": self.stickers_repo,
             "guesses_repo": self.guesses_repo,
+            "memory_repo": self.memory_repo,
         }
