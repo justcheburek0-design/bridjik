@@ -78,6 +78,8 @@ class AIService:
         self.rag_service = rag_service
         # Track memory updates for displaying to user
         self._memory_updates = []
+        # Track reactions parsed from AI response
+        self._pending_reactions: List[Tuple[str, str]] = []
 
     async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
         """Check if bot should respond to the message."""
@@ -213,6 +215,12 @@ class AIService:
 
                 # No tool calls, process final response
                 text = self._process_response(response)
+
+                # Process pending reactions if any
+                if self._pending_reactions and self._current_message:
+                    await self._set_pending_reactions(
+                        self._current_message.chat.id, self._current_message.bot
+                    )
 
                 return text, self._memory_updates
 
@@ -548,44 +556,6 @@ class AIService:
                         logger.exception("Failed to delete memory")
                         content = f"Ошибка при удалении: {str(e)}"
 
-            elif name == "set_reaction":
-                emoji = args.get("emoji")
-                msg_id = args.get("message_id")
-
-                if not emoji:
-                    content = "Error: Emoji is required"
-                elif not msg_id:
-                    content = "Error: Message ID is required"
-                elif not self._current_message:
-                    content = "Error: Available only in message context"
-                else:
-                    # We need to access the bot to set reaction
-                    # The message object has .bot
-                    try:
-                        # Prepare reaction type
-                        from aiogram.types import ReactionTypeEmoji
-
-                        # Check if it's already set (optimize)
-                        # We can check chat_logs for our own reaction?
-                        # User choice: "say that it is already there".
-                        # But we don't know if we (the bot) put it there or someone else.
-                        # So just try to set it.
-                        # Note: set_message_reaction replaces existing reactions by the bot.
-                        # Efficient enough.
-
-                        await self._current_message.bot.set_message_reaction(
-                            chat_id=self._current_message.chat.id,
-                            message_id=msg_id,
-                            reaction=[ReactionTypeEmoji(emoji=emoji)],
-                        )
-                        content = f"Реакция {emoji} установлена!"
-                    except Exception as e:
-                        if "message is not modified" in str(e):
-                            content = f"Реакция {emoji} уже стоит."
-                        else:
-                            logger.exception("Failed to set reaction")
-                            content = f"Ошибка установки реакции: {str(e)}"
-
         except Exception as e:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"
@@ -851,12 +821,118 @@ class AIService:
         logger.info(f"OpenAI raw response: {content!r}")
         text = (content or "").strip()
 
+        # Parse and extract reactions
+        text, reactions = self._parse_reactions(text)
+
+        # Store reactions for later processing
+        self._pending_reactions = reactions
+
         # Filter out hallucinated empty markdown links like ]() that sometimes repeat endlessly
         import re
 
-        text = re.sub(r"(\]\(\)){2,}", "", text)
+        text = re.sub(r"(\]\(){2,}", "", text)
 
         return remove_html(text)
+
+    def _parse_reactions(self, text: str) -> Tuple[str, List[Tuple[str, str]]]:
+        """Parse reaction markers from AI response.
+
+        Args:
+            text: AI response text
+
+        Returns:
+            Tuple of (cleaned_text, reactions_list)
+            reactions_list: [(emoji, excerpt), ...]
+        """
+        import re
+
+        # Pattern: [emoji:😊:выдержка из текста]
+        pattern = r"\[emoji:(.*?):(.*?)\]"
+        reactions = []
+
+        for match in re.finditer(pattern, text):
+            emoji = match.group(1).strip()
+            excerpt = match.group(2).strip()
+            if emoji and excerpt:
+                reactions.append((emoji, excerpt))
+                logger.info(f"Parsed reaction: {emoji} for excerpt: {excerpt[:30]}...")
+
+        # Remove markers from text
+        cleaned_text = re.sub(pattern, "", text).strip()
+
+        return cleaned_text, reactions
+
+    def _find_message_by_excerpt(
+        self, chat_id: int, excerpt: str, limit: int = 50
+    ) -> Optional[int]:
+        """Find message ID by text excerpt in chat history.
+
+        Args:
+            chat_id: Chat ID
+            excerpt: Text excerpt to search for
+            limit: Number of recent messages to search
+
+        Returns:
+            Message ID if found, None otherwise
+        """
+        try:
+            recent = self.chat_logs_repo.get_recent_messages(chat_id, limit)
+            excerpt_lower = excerpt.lower()
+
+            # Search from newest to oldest
+            for msg in reversed(recent):
+                msg_id, author, is_bot, text, *_ = msg
+                if not text:
+                    continue
+
+                # Skip bot's own messages
+                if is_bot:
+                    continue
+
+                if excerpt_lower in text.lower():
+                    logger.info(f"Found message {msg_id} matching excerpt: {excerpt[:30]}...")
+                    return msg_id
+
+            return None
+        except Exception:
+            logger.exception(f"Error finding message by excerpt: {excerpt}")
+            return None
+
+    async def _set_pending_reactions(self, chat_id: int, bot) -> None:
+        """Set reactions that were parsed from AI response.
+
+        Args:
+            chat_id: Chat ID
+            bot: Bot instance for setting reactions
+        """
+        if not self._pending_reactions:
+            return
+
+        from aiogram.types import ReactionTypeEmoji
+
+        for emoji, excerpt in self._pending_reactions:
+            try:
+                # Find message by excerpt
+                msg_id = self._find_message_by_excerpt(chat_id, excerpt)
+
+                if msg_id:
+                    await bot.set_message_reaction(
+                        chat_id=chat_id,
+                        message_id=msg_id,
+                        reaction=[ReactionTypeEmoji(emoji=emoji)],
+                    )
+                    logger.info(
+                        f"Set reaction {emoji} on message {msg_id} (excerpt: {excerpt[:20]}...)"
+                    )
+                else:
+                    logger.warning(
+                        f"Could not find message for reaction {emoji} with excerpt: {excerpt[:30]}..."
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to set reaction {emoji}: {e}")
+
+        # Clear pending reactions
+        self._pending_reactions = []
 
     async def _build_user_input(
         self, context: MessageContext, message: Optional[types.Message]

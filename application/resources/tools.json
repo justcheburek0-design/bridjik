@@ -19,28 +19,6 @@
   {
     "type": "function",
     "function": {
-      "name": "set_reaction",
-      "description": "Put a reaction (emoji) on a specific message. Use every 2-4 message.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "emoji": {
-            "type": "string",
-            "description": "Emoji to set, e.g. '👍', '🔥', '❤️', '😱'"
-          },
-          "message_id": {
-            "type": "integer",
-            "description": "Message ID to react to"
-          }
-        },
-        "required": ["emoji", "message_id"]
-      }
-    }
-  },
-
-  {
-    "type": "function",
-    "function": {
       "name": "get_stickers",
       "description": "Get list of available stickers. You can use sticker: [sticker:name] (max 1 sticker for message)",
       "parameters": {
