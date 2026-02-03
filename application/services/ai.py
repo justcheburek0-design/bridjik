@@ -885,10 +885,6 @@ class AIService:
                 if not text:
                     continue
 
-                # Skip bot's own messages
-                if is_bot:
-                    continue
-
                 if excerpt_lower in text.lower():
                     logger.info(f"Found message {msg_id} matching excerpt: {excerpt[:30]}...")
                     return msg_id
