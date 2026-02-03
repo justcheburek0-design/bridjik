@@ -655,18 +655,31 @@ class MediaService:
             return FSInputFile(str(path))
         return await self._search_image_online(target)
 
-    async def _resolve_sticker_payload(self, payload: str, chat_id: int) -> Optional[str]:
-        """Resolve sticker payload: last/alias/file_id -> file_id."""
+    async def _resolve_sticker_payload(
+        self, payload: str, chat_id: int
+    ) -> tuple[Optional[str], Optional[str], float]:
+        """Resolve sticker payload: last/alias/file_id -> file_id with fuzzy matching.
+
+        Returns:
+            Tuple of (file_id, actual_name, similarity_score)
+        """
         p = (payload or "").strip()
         if not p:
-            return None
+            return (None, None, 0.0)
 
-        # Try to get from repository
-        sticker_id = self.stickers_repo.get_sticker(p)
-        if sticker_id:
-            return sticker_id
+        # Try to get from repository with fuzzy matching
+        file_id, actual_name, similarity = self.stickers_repo.get_sticker_fuzzy(p)
 
-        return p
+        if file_id:
+            # Log if fuzzy match was used (not exact)
+            if similarity < 1.0:
+                logger.info(
+                    f"Fuzzy sticker match: requested '{p}' -> found '{actual_name}' (similarity: {similarity:.2%})"
+                )
+            return (file_id, actual_name, similarity)
+
+        # If still not found, assume it's a direct file_id
+        return (p, p, 1.0)
 
     def _parse_keyboard_payload(self, payload: str) -> Optional[types.InlineKeyboardMarkup]:
         """Parse payload into InlineKeyboardMarkup."""
@@ -881,15 +894,21 @@ class MediaService:
                 except Exception:
                     logger.exception("failed to send generated photo: %s", payload)
             elif kind == "sticker":
-                sticker_id = await self._resolve_sticker_payload(payload, user_msg.chat.id)
+                sticker_result = await self._resolve_sticker_payload(payload, user_msg.chat.id)
+                sticker_id, actual_name, similarity = sticker_result
+
                 if not sticker_id:
                     logger.warning("sticker not found or unsupported: %s", payload)
                     continue
                 try:
                     m = await user_msg.answer_sticker(sticker=sticker_id)
                     if m:
-                        # Use sticker name from database for logging
-                        sent_messages.append((m.message_id, f"[sticker:{payload}]", None, None))
+                        # Log actual sticker name and indicate if it was a fuzzy match
+                        if similarity < 1.0:
+                            log_text = f"[sticker:{actual_name}] (искал: {payload})"
+                        else:
+                            log_text = f"[sticker:{actual_name}]"
+                        sent_messages.append((m.message_id, log_text, None, None))
                 except Exception:
                     logger.exception("failed to send sticker: %s", payload)
             elif kind == "kb":

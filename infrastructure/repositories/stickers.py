@@ -66,6 +66,84 @@ class StickersRepository:
                 return sticker_name
         return None
 
+    def _levenshtein_distance(self, s1: str, s2: str) -> int:
+        """Calculate Levenshtein distance between two strings.
+
+        Args:
+            s1: First string
+            s2: Second string
+
+        Returns:
+            Edit distance (number of operations needed to transform s1 into s2)
+        """
+        if len(s1) < len(s2):
+            return self._levenshtein_distance(s2, s1)
+
+        if len(s2) == 0:
+            return len(s1)
+
+        previous_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                # Cost of insertions, deletions, or substitutions
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+
+        return previous_row[-1]
+
+    def get_sticker_fuzzy(self, name: str) -> tuple[Optional[str], Optional[str], float]:
+        """Get sticker by name with fuzzy matching using Levenshtein distance.
+
+        First tries exact match (case-insensitive), then finds most similar sticker
+        if similarity is within acceptable threshold (30-40% difference).
+
+        Args:
+            name: Sticker name to search for
+
+        Returns:
+            Tuple of (file_id, actual_name, similarity_score):
+            - file_id: Telegram file_id of the sticker
+            - actual_name: The actual name found in database
+            - similarity_score: 0.0 to 1.0, where 1.0 is exact match
+            Returns (None, None, 0.0) if no suitable match found.
+        """
+        # Try exact match first
+        exact_file_id = self.get_sticker(name)
+        if exact_file_id:
+            # Find the actual name (with original casing) for logging
+            actual_name = self.find_by_name(name)
+            return (exact_file_id, actual_name or name.lower(), 1.0)
+
+        # No exact match - try fuzzy search
+        name_lower = name.lower()
+        best_match = None
+        best_distance = float("inf")
+        best_name = None
+
+        for sticker_name in self._stickers.keys():
+            distance = self._levenshtein_distance(name_lower, sticker_name)
+
+            # Calculate similarity threshold based on the longer string
+            max_len = max(len(name_lower), len(sticker_name))
+            threshold = max_len * 0.4  # 40% difference allowed
+
+            if distance < best_distance and distance <= threshold:
+                best_distance = distance
+                best_match = self._stickers[sticker_name]
+                best_name = sticker_name
+
+        if best_match:
+            # Calculate similarity score (1.0 = exact, 0.0 = completely different)
+            max_len = max(len(name_lower), len(best_name))
+            similarity = 1.0 - (best_distance / max_len) if max_len > 0 else 0.0
+            return (best_match, best_name, similarity)
+
+        return (None, None, 0.0)
+
     def add_sticker(self, name: str, file_id: str) -> dict:
         """Add a new sticker.
 
