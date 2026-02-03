@@ -216,20 +216,14 @@ class AIService:
                 # No tool calls, process final response
                 text = self._process_response(response)
 
-                # Process pending reactions if any
-                if self._pending_reactions and self._current_message:
-                    await self._set_pending_reactions(
-                        self._current_message.chat.id, self._current_message.bot
-                    )
-
-                return text, self._memory_updates
+                return text, self._memory_updates, self._pending_reactions
 
             # If loop limit reached, return what we have or error
-            return DEFAULT_ERROR_MESSAGE, self._memory_updates
+            return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
 
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
-            return DEFAULT_ERROR_MESSAGE, self._memory_updates
+            return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
 
     def _get_tools(self) -> List[dict]:
         """Get available tools definition."""
@@ -857,8 +851,11 @@ class AIService:
                 reactions.append((emoji, excerpt))
                 logger.info(f"Parsed reaction: {emoji} for excerpt: {excerpt[:30]}...")
 
-        # Remove markers from text
-        cleaned_text = re.sub(pattern, "", text).strip()
+        # Remove markers from text (including surrounding newlines)
+        # Pattern matches optional newlines before/after the emoji marker
+        cleaned_text = re.sub(r"\n*\[emoji:.*?:.*?\]\n*", "", text)
+        # Clean up multiple consecutive newlines that might remain
+        cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
 
         return cleaned_text, reactions
 

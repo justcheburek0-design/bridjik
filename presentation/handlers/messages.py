@@ -231,7 +231,7 @@ async def auto_reply(
                 pass
 
         # Generate Answer
-        answer, memory_updates = await ai_service.complete(
+        answer, memory_updates, pending_reactions = await ai_service.complete(
             context=context,
             system_prompt=system_prompt,
             message=message,
@@ -275,6 +275,31 @@ async def auto_reply(
                     image_bytes=img_bytes,
                     mime_type=mime,
                 )
+
+        # Set pending reactions after messages are logged
+        if pending_reactions:
+            from aiogram.types import ReactionTypeEmoji
+
+            for emoji, excerpt in pending_reactions:
+                try:
+                    # Find message by excerpt using ai_service helper
+                    msg_id = ai_service._find_message_by_excerpt(message.chat.id, excerpt)
+
+                    if msg_id:
+                        await message.bot.set_message_reaction(
+                            chat_id=message.chat.id,
+                            message_id=msg_id,
+                            reaction=[ReactionTypeEmoji(emoji=emoji)],
+                        )
+                        logger.info(
+                            f"Set reaction {emoji} on message {msg_id} (excerpt: {excerpt[:20]}...)"
+                        )
+                    else:
+                        logger.warning(
+                            f"Could not find message for reaction {emoji} with excerpt: {excerpt[:30]}..."
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to set reaction {emoji}: {e}")
     except Exception as e:
         logger.exception("Error in auto_reply")
         try:
