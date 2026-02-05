@@ -100,49 +100,127 @@ class IChatLogsRepository(ABC):
 
 
 class IMemoryRepository(ABC):
-    """Interface for chat memory repository."""
+    """Interface for chat and user memory repository.
+
+    Memory is divided into two types:
+    - Chat memory: local memes, jokes, chat-specific information
+    - User memory: global information about users (city, education, health, etc.)
+    """
 
     @abstractmethod
-    def add_memory(
+    def add_chat_memory(
         self,
         chat_id: int,
-        category: str,
         content: str,
         tags: Optional[List[str]] = None,
         author_id: Optional[int] = None,
-        metadata: Optional[dict] = None,
     ) -> str:
-        """Add a memory record. Returns memory ID."""
+        """Add a memory record for a chat. Returns memory ID."""
         pass
 
     @abstractmethod
-    def delete_memory(self, chat_id: int, memory_id: str) -> bool:
-        """Delete a memory by ID. Returns True if found and deleted."""
+    def add_user_memory(
+        self,
+        user_id: int,
+        content: str,
+        tags: Optional[List[str]] = None,
+        author_id: Optional[int] = None,
+    ) -> str:
+        """Add a memory record about a user. Returns memory ID."""
         pass
 
     @abstractmethod
-    def get_memories_by_category(self, chat_id: int, category: str) -> List[dict]:
-        """Get all memories for a chat by category."""
+    def update_memory(
+        self,
+        scope: str,
+        scope_id: int,
+        memory_id: str,
+        content: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> bool:
+        """Update a memory record. Returns True if found and updated.
+
+        Args:
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
+            memory_id: ID of memory to update
+            content: New content (optional)
+            tags: New tags (optional)
+        """
         pass
 
     @abstractmethod
-    def search_memories(self, chat_id: int, query: str) -> List[dict]:
-        """Search memories by tags or content."""
+    def delete_memory(self, scope: str, scope_id: int, memory_id: str) -> bool:
+        """Delete a memory by ID. Returns True if found and deleted.
+
+        Args:
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
+            memory_id: ID of memory to delete
+        """
         pass
 
     @abstractmethod
-    def search_and_delete(self, chat_id: int, query: str) -> Optional[dict]:
-        """Search for a memory and delete the first match. Returns deleted memory or None."""
-        pass
-
-    @abstractmethod
-    def get_all_memories(self, chat_id: int) -> List[dict]:
+    def get_chat_memories(self, chat_id: int) -> List[dict]:
         """Get all memories for a chat."""
         pass
 
     @abstractmethod
-    def get_memory_categories(self, chat_id: int) -> dict:
-        """Get memories grouped by category."""
+    def get_user_memories(self, user_id: int) -> List[dict]:
+        """Get all memories about a user."""
+        pass
+
+    @abstractmethod
+    def get_users_memories(self, user_ids: List[int]) -> dict:
+        """Get memories about multiple users.
+
+        Returns:
+            Dictionary mapping user_id -> list of memories
+        """
+        pass
+
+    @abstractmethod
+    def search_memories(self, scope: str, scope_id: int, query: str) -> List[dict]:
+        """Search memories by tags or content.
+
+        Args:
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
+            query: Search query
+        """
+        pass
+
+    @abstractmethod
+    def search_and_delete(self, scope: str, scope_id: int, query: str) -> Optional[dict]:
+        """Search for a memory and delete the first match. Returns deleted memory or None.
+
+        Args:
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
+            query: Search query
+        """
+        pass
+
+    @abstractmethod
+    async def find_similar_memories(
+        self,
+        scope: str,
+        scope_id: int,
+        content: str,
+        rag_service,
+        limit: int = 3,
+        similarity_threshold: float = 0.7,
+    ) -> List[Tuple[dict, float]]:
+        """Find similar memories using semantic search.
+
+        Args:
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
+            content: Content to search for similar memories
+            rag_service: RAG service instance for embeddings
+            limit: Maximum number of similar memories to return
+            similarity_threshold: Minimum similarity score (0.0-1.0)
+        """
         pass
 
 

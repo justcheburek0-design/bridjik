@@ -1,7 +1,6 @@
-"""Admin handlers for memory management."""
+"""Handlers for memory viewing and management."""
 
 import logging
-from collections import defaultdict
 
 from aiogram import Bot, F, Router, types
 from aiogram.filters import Command
@@ -13,158 +12,271 @@ from core.config import Config
 from infrastructure.repositories.memories import MemoryRepository
 
 logger = logging.getLogger(__name__)
-
 router = Router()
 
 
 class MemoryStates(StatesGroup):
     """FSM states for memory management."""
 
+    # Admin states
+    admin_viewing = State()  # scope: "chats"/"users", index: int
     waiting_for_search_query = State()
     waiting_for_delete_id = State()
     waiting_for_restore_file = State()
-    waiting_for_chat_selection = State()
+
+    # User states
+    user_viewing = State()  # scope: "chat"/"me"
 
 
-def _format_memory_item(memory: dict, truncate_length: int = 200) -> str:
-    """Format single memory item for display."""
-    content = memory["content"]
-    if len(content) > truncate_length:
-        content = content[:truncate_length] + "..."
+def _format_memory_list(memories: list, max_show: int = 100) -> str:
+    """Format memories as numbered list."""
+    if not memories:
+        return "📭 Записей нет\n"
 
-    memory_id = memory["id"]  # Show first 8 chars of ID
-    tags_str = ", ".join(memory.get("tags", [])) if memory.get("tags") else "нет тегов"
+    text = ""
+    for idx, memory in enumerate(memories[:max_show], 1):
+        content = memory["content"]
+        if len(content) > 100:
+            content = content[:97] + "..."
+        text += f"{idx}. {content}\n"
 
-    return f"  • ID: <code>{memory_id}</code>\n    └ {content}\n    └ Теги: {tags_str}\n"
+    if len(memories) > max_show:
+        text += f"\n... ещё {len(memories) - max_show} записей"
 
-
-def _get_main_keyboard() -> types.InlineKeyboardMarkup:
-    """Get main menu keyboard."""
-    return types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="📋 Просмотр всех", callback_data="memory_list")],
-            [types.InlineKeyboardButton(text="🔍 Поиск", callback_data="memory_search")],
-            [types.InlineKeyboardButton(text="❌ Удалить", callback_data="memory_delete")],
-            [types.InlineKeyboardButton(text="📊 Статистика", callback_data="memory_stats")],
-            [
-                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="memory_backup"),
-                types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="memory_restore"),
-            ],
-        ]
-    )
+    return text
 
 
 @router.message(Command("memories"))
-async def list_memories(message: types.Message, config: Config, memory_repo: MemoryRepository):
-    """Show memory management menu."""
-    if message.from_user.id not in config.ADMIN_IDS:
-        return
-
-    await message.answer("<b>Управление памятью бота</b>", reply_markup=_get_main_keyboard())
-
-
-@router.callback_query(F.data == "memory_menu")
-async def back_to_menu(callback: types.CallbackQuery):
-    """Return to main menu."""
-    await callback.message.edit_text(
-        "<b>Управление памятью бота</b>", reply_markup=_get_main_keyboard()
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "memory_list")
-async def show_memory_list(
-    callback: types.CallbackQuery, config: Config, memory_repo: MemoryRepository
+async def show_memories(
+    message: types.Message, config: Config, memory_repo: MemoryRepository, state: FSMContext
 ):
-    """Show all memories organized by chat and category."""
-    if callback.from_user.id not in config.ADMIN_IDS:
-        await callback.answer("Недостаточно прав", show_alert=True)
-        return
+    """Show memories based on user role."""
+    user_id = message.from_user.id
+    chat_id = message.chat.id
 
-    # Get all chats with memories
-    all_memories = memory_repo._memories
-    if not all_memories:
-        await callback.message.edit_text(
-            "🔍 Память пуста. Записей пока нет.",
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-                ]
-            ),
+    is_admin = user_id in config.ADMIN_IDS
+
+    if is_admin:
+        # Admin view: show first chat
+        await state.update_data(scope="chats", index=0)
+        await state.set_state(MemoryStates.admin_viewing)
+        await _show_admin_view(message, memory_repo, state, edit=False)
+    else:
+        # Regular user view: show chat memory by default
+        await state.update_data(scope="chat", chat_id=chat_id, user_id=user_id)
+        await state.set_state(MemoryStates.user_viewing)
+        await _show_user_view(message, memory_repo, state, edit=False)
+
+
+async def _show_admin_view(
+    message_or_callback, memory_repo: MemoryRepository, state: FSMContext, edit: bool = True
+):
+    """Show admin memory view with slider [<] [Toggle] [>]."""
+    data = await state.get_data()
+    scope = data.get("scope", "chats")
+    index = data.get("index", 0)
+
+    if scope == "chats":
+        items = list(memory_repo._memories.get("chats", {}).items())
+        scope_icon = "💬"
+        scope_label = "Чаты"
+        toggle_text = "Пользователи"
+        toggle_callback = "admin_toggle_users"
+    else:  # users
+        items = list(memory_repo._memories.get("users", {}).items())
+        scope_icon = "👤"
+        scope_label = "Пользователи"
+        toggle_text = "Чаты"
+        toggle_callback = "admin_toggle_chats"
+
+    if not items:
+        text = f"<b>{scope_icon} {scope_label}</b>\n\n📭 Нет записей"
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(text=toggle_text, callback_data=toggle_callback)]
+            ]
         )
-        await callback.answer()
-        return
+    else:
+        # Ensure index is in bounds
+        if index >= len(items):
+            index = len(items) - 1
+        if index < 0:
+            index = 0
 
-    # Build message for each chat
-    text = "<b>📋 Память бота</b>\n\n"
+        scope_id, memories = items[index]
 
-    for chat_id, memories in all_memories.items():
-        if not memories:
-            continue
+        text = f"<b>{scope_icon} ID: <code>{scope_id}</code></b>\n"
+        text += f"<i>{index + 1} из {len(items)}</i>\n\n"
+        text += _format_memory_list(memories)
 
-        text += f"💬 <b>Чат ID:</b> <code>{chat_id}</code>\n"
-        text += f"   Всего записей: {len(memories)}\n\n"
+        # Build navigation buttons
+        nav_buttons = []
 
-        # Group by category
-        categories = memory_repo.get_memory_categories(chat_id)
-        for category, items in categories.items():
-            text += f"📁 <b>{category}</b> ({len(items)} зап.):\n"
-            for memory in items[:3]:  # Show first 3 per category
-                text += _format_memory_item(memory, truncate_length=200)
+        # Left arrow
+        if len(items) > 1:
+            nav_buttons.append(types.InlineKeyboardButton(text="←", callback_data="admin_prev"))
+        else:
+            nav_buttons.append(types.InlineKeyboardButton(text=" ", callback_data="noop"))
 
-            if len(items) > 3:
-                text += f"   ... ещё {len(items) - 3} записей\n"
-            text += "\n"
+        # Toggle center
+        nav_buttons.append(
+            types.InlineKeyboardButton(text=toggle_text, callback_data=toggle_callback)
+        )
 
-    # Truncate if too long
-    if len(text) > 4000:
-        text = text[:3950] + "\n\n... (список обрезан)"
+        # Right arrow
+        if len(items) > 1:
+            nav_buttons.append(types.InlineKeyboardButton(text="→", callback_data="admin_next"))
+        else:
+            nav_buttons.append(types.InlineKeyboardButton(text=" ", callback_data="noop"))
+
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                nav_buttons,
+                [
+                    types.InlineKeyboardButton(text="🔍 Поиск", callback_data="memory_search"),
+                    types.InlineKeyboardButton(text="❌ Удалить", callback_data="memory_delete"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="💾 Бэкап", callback_data="memory_backup"),
+                    types.InlineKeyboardButton(
+                        text="🔄 Восстановить", callback_data="memory_restore"
+                    ),
+                ],
+            ]
+        )
+
+        # Update index in state
+        await state.update_data(index=index)
+
+    if edit and isinstance(message_or_callback, types.CallbackQuery):
+        await message_or_callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        await message_or_callback.answer()
+    else:
+        msg = (
+            message_or_callback
+            if isinstance(message_or_callback, types.Message)
+            else message_or_callback.message
+        )
+        await msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+async def _show_user_view(
+    message_or_callback, memory_repo: MemoryRepository, state: FSMContext, edit: bool = True
+):
+    """Show regular user memory view with toggle."""
+    data = await state.get_data()
+    scope = data.get("scope", "chat")
+    chat_id = data.get("chat_id")
+    user_id = data.get("user_id")
+
+    if scope == "chat":
+        memories = memory_repo.get_chat_memories(chat_id)
+        text = f"<b>💬 Память чата <code>{chat_id}</code></b>\n\n"
+        text += _format_memory_list(memories)
+        toggle_text = "Обо мне"
+        toggle_callback = "user_toggle_me"
+    else:  # me
+        memories = memory_repo.get_user_memories(user_id)
+        text = f"<b>👤 Ваш ID: <code>{user_id}</code></b>\n\n"
+        text += _format_memory_list(memories)
+        toggle_text = "Память чата"
+        toggle_callback = "user_toggle_chat"
 
     kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]]
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text=toggle_text, callback_data=toggle_callback)]
+        ]
     )
 
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    if edit and isinstance(message_or_callback, types.CallbackQuery):
+        await message_or_callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        await message_or_callback.answer()
+    else:
+        msg = (
+            message_or_callback
+            if isinstance(message_or_callback, types.Message)
+            else message_or_callback.message
+        )
+        await msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+# Admin navigation callbacks
+@router.callback_query(F.data == "admin_prev", MemoryStates.admin_viewing)
+async def admin_prev(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Navigate to previous item."""
+    data = await state.get_data()
+    index = data.get("index", 0)
+    scope = data.get("scope", "chats")
+
+    items = list(memory_repo._memories.get(scope, {}).items())
+    new_index = (index - 1) % len(items) if items else 0
+
+    await state.update_data(index=new_index)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
+@router.callback_query(F.data == "admin_next", MemoryStates.admin_viewing)
+async def admin_next(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Navigate to next item."""
+    data = await state.get_data()
+    index = data.get("index", 0)
+    scope = data.get("scope", "chats")
+
+    items = list(memory_repo._memories.get(scope, {}).items())
+    new_index = (index + 1) % len(items) if items else 0
+
+    await state.update_data(index=new_index)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
+@router.callback_query(F.data == "admin_toggle_chats")
+async def admin_toggle_chats(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Toggle to chats view."""
+    await state.update_data(scope="chats", index=0)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
+@router.callback_query(F.data == "admin_toggle_users")
+async def admin_toggle_users(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Toggle to users view."""
+    await state.update_data(scope="users", index=0)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
+@router.callback_query(F.data == "noop")
+async def noop(callback: types.CallbackQuery):
+    """No-op callback for disabled buttons."""
     await callback.answer()
 
 
-@router.callback_query(F.data == "memory_stats")
-async def show_stats(callback: types.CallbackQuery, config: Config, memory_repo: MemoryRepository):
-    """Show memory statistics."""
-    if callback.from_user.id not in config.ADMIN_IDS:
-        await callback.answer("Недостаточно прав", show_alert=True)
-        return
-
-    all_memories = memory_repo._memories
-    if not all_memories:
-        await callback.answer("Память пуста", show_alert=True)
-        return
-
-    text = "<b>📊 Статистика памяти</b>\n\n"
-
-    total_memories = 0
-    category_stats = defaultdict(int)
-
-    for chat_id, memories in all_memories.items():
-        total_memories += len(memories)
-        for memory in memories:
-            category_stats[memory["category"]] += 1
-
-    text += f"💾 <b>Всего записей:</b> {total_memories}\n"
-    text += f"💬 <b>Чатов с памятью:</b> {len(all_memories)}\n\n"
-
-    text += "<b>По категориям:</b>\n"
-    for category, count in sorted(category_stats.items(), key=lambda x: x[1], reverse=True):
-        text += f"  • {category}: {count}\n"
-
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[[types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]]
-    )
-
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    await callback.answer()
+# User toggle callbacks
+@router.callback_query(F.data == "user_toggle_chat", MemoryStates.user_viewing)
+async def user_toggle_chat(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Toggle to chat view."""
+    await state.update_data(scope="chat")
+    await _show_user_view(callback, memory_repo, state, edit=True)
 
 
+@router.callback_query(F.data == "user_toggle_me", MemoryStates.user_viewing)
+async def user_toggle_me(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Toggle to user view."""
+    await state.update_data(scope="me")
+    await _show_user_view(callback, memory_repo, state, edit=True)
+
+
+# Admin actions
 @router.callback_query(F.data == "memory_search")
 async def start_search(callback: types.CallbackQuery, state: FSMContext, config: Config):
     """Start search flow."""
@@ -174,66 +286,74 @@ async def start_search(callback: types.CallbackQuery, state: FSMContext, config:
 
     await state.set_state(MemoryStates.waiting_for_search_query)
     await callback.message.answer(
-        "🔍 Введите поисковый запрос:\n"
-        "(будет искать в содержимом и тегах)\n\n"
-        "Отправьте /cancel для отмены",
+        "🔍 <b>Поиск</b>\nВведите запрос:",
+        parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="memory_menu")]
+                [types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_search")]
             ]
         ),
     )
     await callback.answer()
 
 
+@router.callback_query(F.data == "cancel_search")
+async def cancel_search(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Cancel search."""
+    await state.set_state(MemoryStates.admin_viewing)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
 @router.message(MemoryStates.waiting_for_search_query)
 async def process_search(message: types.Message, state: FSMContext, memory_repo: MemoryRepository):
     """Process search query."""
     query = message.text.strip()
-    if not query:
-        await message.answer("Запрос не может быть пустым. Попробуйте ещё раз.")
-        return
 
-    # Search across all chats
     results = []
-    for chat_id in memory_repo._memories.keys():
-        chat_results = memory_repo.search_memories(chat_id, query)
-        for result in chat_results:
-            result["chat_id"] = chat_id
-            results.append(result)
+
+    # Search in chats
+    for chat_id in memory_repo._memories.get("chats", {}).keys():
+        matches = memory_repo.search_memories("chat", chat_id, query)
+        for m in matches:
+            results.append((f"💬 {chat_id}", m))
+
+    # Search in users
+    for user_id in memory_repo._memories.get("users", {}).keys():
+        matches = memory_repo.search_memories("user", user_id, query)
+        for m in matches:
+            results.append((f"👤 {user_id}", m))
 
     if not results:
-        await message.answer(
-            f'🔍 По запросу "<code>{query}</code>" ничего не найдено.',
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-                ]
-            ),
-        )
+        text = f"Ничего не найдено по запросу '<code>{query}</code>'"
     else:
-        text = f"🔍 Найдено записей: <b>{len(results)}</b>\n"
-        text += f'Запрос: "<code>{query}</code>"\n\n'
+        text = f"🔍 <b>Найдено {len(results)} записей</b>:\n\n"
+        for label, m in results[:15]:
+            content = m["content"]
+            if len(content) > 80:
+                content = content[:77] + "..."
+            text += f"{label}: {content}\n"
 
-        for memory in results[:10]:  # Show first 10 results
-            chat_id = memory.get("chat_id", "unknown")
-            text += f"💬 Чат: <code>{chat_id}</code>\n"
-            text += _format_memory_item(memory, truncate_length=200)
+        if len(results) > 15:
+            text += f"\n... ещё {len(results) - 15}"
 
-        if len(results) > 10:
-            text += f"\n... ещё {len(results) - 10} результатов"
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_view")]
+        ]
+    )
 
-        await message.answer(
-            text,
-            parse_mode="HTML",
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-                ]
-            ),
-        )
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await state.set_state(MemoryStates.admin_viewing)
 
-    await state.clear()
+
+@router.callback_query(F.data == "back_to_view")
+async def back_to_view(
+    callback: types.CallbackQuery, memory_repo: MemoryRepository, state: FSMContext
+):
+    """Return to admin view."""
+    await _show_admin_view(callback, memory_repo, state, edit=True)
 
 
 @router.callback_query(F.data == "memory_delete")
@@ -245,82 +365,73 @@ async def start_delete(callback: types.CallbackQuery, state: FSMContext, config:
 
     await state.set_state(MemoryStates.waiting_for_delete_id)
     await callback.message.answer(
-        "❌ Введите ID записи для удаления\n"
-        "(первые 8+ символов ID достаточно)\n\n"
-        "Отправьте /cancel для отмены",
+        "❌ <b>Удаление</b>\nВведите ID записи:",
+        parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="memory_menu")]
+                [types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_delete")]
             ]
         ),
     )
     await callback.answer()
 
 
+@router.callback_query(F.data == "cancel_delete")
+async def cancel_delete(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Cancel delete."""
+    await state.set_state(MemoryStates.admin_viewing)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
+
+
 @router.message(MemoryStates.waiting_for_delete_id)
 async def process_delete(message: types.Message, state: FSMContext, memory_repo: MemoryRepository):
     """Process delete by ID."""
-    partial_id = message.text.strip()
-    if not partial_id:
-        await message.answer("ID не может быть пустым. Попробуйте ещё раз.")
-        return
+    mem_id = message.text.strip()
+    deleted = False
 
-    # Search for matching ID across all chats
-    found = False
-    for chat_id in memory_repo._memories.keys():
-        memories = memory_repo.get_all_memories(chat_id)
-        for memory in memories:
-            if memory["id"].startswith(partial_id):
-                # Found matching memory
-                if memory_repo.delete_memory(chat_id, memory["id"]):
-                    await message.answer(
-                        f"✅ Запись удалена!\n"
-                        f"ID: <code>{memory['id']}</code>\n"
-                        f"Чат: <code>{chat_id}</code>\n"
-                        f"Категория: {memory['category']}",
-                        reply_markup=types.InlineKeyboardMarkup(
-                            inline_keyboard=[
-                                [
-                                    types.InlineKeyboardButton(
-                                        text="🔙 Назад", callback_data="memory_menu"
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
-                    found = True
+    # Try delete from chats
+    for chat_id in list(memory_repo._memories.get("chats", {}).keys()):
+        for m in memory_repo.get_chat_memories(chat_id):
+            if m["id"].startswith(mem_id):
+                memory_repo.delete_memory("chat", chat_id, m["id"])
+                deleted = True
+                break
+
+    # Try delete from users
+    if not deleted:
+        for user_id in list(memory_repo._memories.get("users", {}).keys()):
+            for m in memory_repo.get_user_memories(user_id):
+                if m["id"].startswith(mem_id):
+                    memory_repo.delete_memory("user", user_id, m["id"])
+                    deleted = True
                     break
-        if found:
-            break
 
-    if not found:
-        await message.answer(
-            f'❌ Запись с ID "<code>{partial_id}</code>" не найдена.',
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-                ]
-            ),
-        )
+    text = "✅ Удалено" if deleted else f"❌ ID '{mem_id}' не найден"
 
-    await state.clear()
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_view")]
+        ]
+    )
+
+    await message.answer(text, reply_markup=kb)
+    await state.set_state(MemoryStates.admin_viewing)
 
 
 @router.callback_query(F.data == "memory_backup")
-async def backup_memories(
-    callback: types.CallbackQuery, config: Config, memory_repo: MemoryRepository
-):
+async def backup_memories(callback: types.CallbackQuery, config: Config):
     """Send backup file."""
     if callback.from_user.id not in config.ADMIN_IDS:
         await callback.answer("Недостаточно прав", show_alert=True)
         return
 
-    file_path = config.MEMORIES_FILE
-    if not file_path.exists():
-        await callback.answer("Файл памяти не найден.", show_alert=True)
+    if not config.MEMORIES_FILE.exists():
+        await callback.answer("Файл не найден", show_alert=True)
         return
 
-    await callback.message.answer_document(FSInputFile(file_path), caption="💾 Бэкап памяти бота")
+    await callback.message.answer_document(FSInputFile(config.MEMORIES_FILE), caption="💾 Бэкап")
     await callback.answer()
 
 
@@ -333,16 +444,24 @@ async def start_restore(callback: types.CallbackQuery, state: FSMContext, config
 
     await state.set_state(MemoryStates.waiting_for_restore_file)
     await callback.message.answer(
-        "⚠️ <b>Внимание!</b> Восстановление перезапишет текущую память.\n"
-        "Отправьте файл <code>memories.json</code> для восстановления:",
+        "⚠️ <b>Восстановление</b>\nОтправьте файл .json:",
         parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="memory_menu")]
+                [types.InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_restore")]
             ]
         ),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "cancel_restore")
+async def cancel_restore(
+    callback: types.CallbackQuery, state: FSMContext, memory_repo: MemoryRepository
+):
+    """Cancel restore."""
+    await state.set_state(MemoryStates.admin_viewing)
+    await _show_admin_view(callback, memory_repo, state, edit=True)
 
 
 @router.message(MemoryStates.waiting_for_restore_file, F.document)
@@ -351,7 +470,7 @@ async def process_restore_file(
 ):
     """Process restore file."""
     if not message.document.file_name.endswith(".json"):
-        await message.answer("❌ Пожалуйста, отправьте файл с расширением .json")
+        await message.answer("❌ Нужен .json файл")
         return
 
     try:
@@ -360,37 +479,19 @@ async def process_restore_file(
         json_content = file_content.read().decode("utf-8")
 
         if memory_repo.restore_from_json(json_content):
-            await message.answer(
-                "✅ Память успешно восстановлена!",
-                reply_markup=types.InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-                    ]
-                ),
-            )
+            text = "✅ Восстановлено"
         else:
-            await message.answer("❌ Ошибка при восстановлении. Проверьте формат файла.")
+            text = "❌ Ошибка"
 
     except Exception as e:
-        logger.error(f"Error restoring memories: {e}")
-        await message.answer("❌ Произошла ошибка при обработке файла.")
+        logger.error(f"Restore error: {e}")
+        text = "❌ Ошибка"
 
-    await state.clear()
-
-
-@router.message(Command("cancel"))
-async def cancel_handler(message: types.Message, state: FSMContext):
-    """Cancel current operation."""
-    current_state = await state.get_state()
-    if current_state is None:
-        return
-
-    await state.clear()
-    await message.answer(
-        "Операция отменена.",
-        reply_markup=types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔙 Назад", callback_data="memory_menu")]
-            ]
-        ),
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_view")]
+        ]
     )
+
+    await message.answer(text, reply_markup=kb)
+    await state.set_state(MemoryStates.admin_viewing)

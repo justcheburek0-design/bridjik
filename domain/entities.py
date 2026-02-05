@@ -82,6 +82,7 @@ class MessageContext:
             structured_context = await rag_service.build_structured_context(
                 prompt, user.id, chat.id
             )
+            print(structured_context)
             rag_context = json.dumps(structured_context, ensure_ascii=False)
         except Exception:
             logger.exception("RAG: failed to build structured context")

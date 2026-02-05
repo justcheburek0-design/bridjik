@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from domain.interfaces import IMemoryRepository
 
@@ -13,28 +13,45 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryRepository(IMemoryRepository):
-    """JSON-based chat memory repository."""
+    """JSON-based chat and user memory repository."""
 
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self._memories: Dict[int, List[dict]] = {}
+        self._memories: Dict[str, Dict[int, List[dict]]] = {"chats": {}, "users": {}}
         self._load()
 
     def _load(self):
         """Load memories from JSON file."""
         if not self.file_path.exists():
-            self._memories = {}
+            self._memories = {"chats": {}, "users": {}}
             return
 
         try:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Convert string keys back to integers
-            self._memories = {int(k): v for k, v in data.items()}
-            logger.info(f"Loaded memories for {len(self._memories)} chats")
+
+            # Handle new structure
+            if isinstance(data, dict) and "chats" in data and "users" in data:
+                # New structure: {"chats": {...}, "users": {...}}
+                self._memories = {
+                    "chats": {int(k): v for k, v in data.get("chats", {}).items()},
+                    "users": {int(k): v for k, v in data.get("users", {}).items()},
+                }
+            else:
+                # Old structure: just chat_id -> memories
+                # Treat all as chat memories
+                self._memories = {
+                    "chats": {int(k): v for k, v in data.items()},
+                    "users": {},
+                }
+
+            logger.info(
+                f"Loaded memories: {len(self._memories['chats'])} chats, "
+                f"{len(self._memories['users'])} users"
+            )
         except Exception as e:
             logger.exception("Failed to load memories: %s", e)
-            self._memories = {}
+            self._memories = {"chats": {}, "users": {}}
 
     def _save(self):
         """Save memories to JSON file."""
@@ -43,75 +60,166 @@ class MemoryRepository(IMemoryRepository):
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Convert integer keys to strings for JSON
-            data = {str(k): v for k, v in self._memories.items()}
+            data = {
+                "chats": {str(k): v for k, v in self._memories["chats"].items()},
+                "users": {str(k): v for k, v in self._memories["users"].items()},
+            }
 
             with open(self.file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.exception("Failed to save memories: %s", e)
 
-    def add_memory(
+    def add_chat_memory(
         self,
         chat_id: int,
-        category: str,
         content: str,
         tags: Optional[List[str]] = None,
         author_id: Optional[int] = None,
-        metadata: Optional[dict] = None,
     ) -> str:
-        """Add a memory record. Returns memory ID."""
+        """Add a memory record for a chat. Returns memory ID."""
         memory_id = str(uuid.uuid4())
 
         memory = {
             "id": memory_id,
-            "category": category,
             "content": content.strip(),
             "tags": tags or [],
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "author_id": author_id,
-            "metadata": metadata or {},
         }
 
-        if chat_id not in self._memories:
-            self._memories[chat_id] = []
+        if chat_id not in self._memories["chats"]:
+            self._memories["chats"][chat_id] = []
 
-        self._memories[chat_id].append(memory)
+        self._memories["chats"][chat_id].append(memory)
         self._save()
 
-        logger.info(f"Added memory {memory_id} to chat {chat_id} (category: {category})")
+        logger.info(f"Added chat memory {memory_id} to chat {chat_id}")
         return memory_id
 
-    def delete_memory(self, chat_id: int, memory_id: str) -> bool:
-        """Delete a memory by ID. Returns True if found and deleted."""
-        if chat_id not in self._memories:
+    def add_user_memory(
+        self,
+        user_id: int,
+        content: str,
+        tags: Optional[List[str]] = None,
+        author_id: Optional[int] = None,
+    ) -> str:
+        """Add a memory record about a user. Returns memory ID."""
+        memory_id = str(uuid.uuid4())
+
+        memory = {
+            "id": memory_id,
+            "content": content.strip(),
+            "tags": tags or [],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Only add author_id if explicitly provided
+        if author_id is not None:
+            memory["author_id"] = author_id
+
+        if user_id not in self._memories["users"]:
+            self._memories["users"][user_id] = []
+
+        self._memories["users"][user_id].append(memory)
+        self._save()
+
+        logger.info(f"Added user memory {memory_id} for user {user_id}")
+        return memory_id
+
+    def update_memory(
+        self,
+        scope: str,
+        scope_id: int,
+        memory_id: str,
+        content: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> bool:
+        """Update a memory record. Returns True if found and updated."""
+        if scope not in ["chat", "user"]:
+            logger.warning(f"Invalid scope: {scope}")
             return False
 
-        original_count = len(self._memories[chat_id])
-        self._memories[chat_id] = [m for m in self._memories[chat_id] if m["id"] != memory_id]
+        scope_key = "chats" if scope == "chat" else "users"
 
-        deleted = len(self._memories[chat_id]) < original_count
+        if scope_id not in self._memories[scope_key]:
+            return False
+
+        for memory in self._memories[scope_key][scope_id]:
+            if memory["id"] == memory_id:
+                # Update fields if provided
+                if content is not None:
+                    memory["content"] = content.strip()
+                if tags is not None:
+                    memory["tags"] = tags
+
+                memory["updated_at"] = datetime.now(timezone.utc).isoformat()
+                self._save()
+
+                logger.info(f"Updated {scope} memory {memory_id} in {scope_key} {scope_id}")
+                return True
+
+        return False
+
+    def delete_memory(self, scope: str, scope_id: int, memory_id: str) -> bool:
+        """Delete a memory by ID. Returns True if found and deleted."""
+        if scope not in ["chat", "user"]:
+            logger.warning(f"Invalid scope: {scope}")
+            return False
+
+        scope_key = "chats" if scope == "chat" else "users"
+
+        if scope_id not in self._memories[scope_key]:
+            return False
+
+        original_count = len(self._memories[scope_key][scope_id])
+        self._memories[scope_key][scope_id] = [
+            m for m in self._memories[scope_key][scope_id] if m["id"] != memory_id
+        ]
+
+        deleted = len(self._memories[scope_key][scope_id]) < original_count
         if deleted:
             self._save()
-            logger.info(f"Deleted memory {memory_id} from chat {chat_id}")
+            logger.info(f"Deleted {scope} memory {memory_id} from {scope_key} {scope_id}")
 
         return deleted
 
-    def get_memories_by_category(self, chat_id: int, category: str) -> List[dict]:
-        """Get all memories for a chat by category."""
-        if chat_id not in self._memories:
+    def get_chat_memories(self, chat_id: int) -> List[dict]:
+        """Get all memories for a chat."""
+        return self._memories["chats"].get(chat_id, [])
+
+    def get_user_memories(self, user_id: int) -> List[dict]:
+        """Get all memories about a user."""
+        return self._memories["users"].get(user_id, [])
+
+    def get_users_memories(self, user_ids: List[int]) -> dict:
+        """Get memories about multiple users.
+
+        Returns:
+            Dictionary mapping user_id -> list of memories
+        """
+        result = {}
+        for user_id in user_ids:
+            memories = self._memories["users"].get(user_id, [])
+            if memories:
+                result[user_id] = memories
+        return result
+
+    def search_memories(self, scope: str, scope_id: int, query: str) -> List[dict]:
+        """Search memories by tags or content."""
+        if scope not in ["chat", "user"]:
+            logger.warning(f"Invalid scope: {scope}")
             return []
 
-        return [m for m in self._memories[chat_id] if m.get("category") == category]
+        scope_key = "chats" if scope == "chat" else "users"
 
-    def search_memories(self, chat_id: int, query: str) -> List[dict]:
-        """Search memories by tags or content."""
-        if chat_id not in self._memories:
+        if scope_id not in self._memories[scope_key]:
             return []
 
         query_lower = query.lower()
         results = []
 
-        for memory in self._memories[chat_id]:
+        for memory in self._memories[scope_key][scope_id]:
             # Check content
             if query_lower in memory.get("content", "").lower():
                 results.append(memory)
@@ -124,18 +232,33 @@ class MemoryRepository(IMemoryRepository):
 
         return results
 
+    def search_and_delete(self, scope: str, scope_id: int, query: str) -> Optional[dict]:
+        """Search for a memory and delete the first match. Returns deleted memory or None."""
+        results = self.search_memories(scope, scope_id, query)
+
+        if not results:
+            return None
+
+        # Delete first match
+        memory_to_delete = results[0]
+        self.delete_memory(scope, scope_id, memory_to_delete["id"])
+
+        return memory_to_delete
+
     async def find_similar_memories(
         self,
-        chat_id: int,
+        scope: str,
+        scope_id: int,
         content: str,
         rag_service,
         limit: int = 3,
         similarity_threshold: float = 0.7,
-    ) -> List[tuple[dict, float]]:
+    ) -> List[Tuple[dict, float]]:
         """Find similar memories using semantic search via RAG.
 
         Args:
-            chat_id: Chat ID to search within
+            scope: "chat" or "user"
+            scope_id: chat_id or user_id
             content: Content to search for similar memories
             rag_service: RAG service instance for embeddings
             limit: Maximum number of similar memories to return
@@ -144,14 +267,20 @@ class MemoryRepository(IMemoryRepository):
         Returns:
             List of tuples (memory_dict, similarity_score), sorted by similarity desc
         """
-        if chat_id not in self._memories or not self._memories[chat_id]:
+        if scope not in ["chat", "user"]:
+            logger.warning(f"Invalid scope: {scope}")
+            return []
+
+        scope_key = "chats" if scope == "chat" else "users"
+
+        if scope_id not in self._memories[scope_key] or not self._memories[scope_key][scope_id]:
             return []
 
         try:
             import numpy as np
 
-            # Get all memories for this chat
-            memories = self._memories[chat_id]
+            # Get all memories for this scope
+            memories = self._memories[scope_key][scope_id]
             if not memories:
                 return []
 
@@ -193,45 +322,30 @@ class MemoryRepository(IMemoryRepository):
             logger.exception(f"Failed to find similar memories: {e}")
             return []
 
-    def search_and_delete(self, chat_id: int, query: str) -> Optional[dict]:
-        """Search for a memory and delete the first match. Returns deleted memory or None."""
-        results = self.search_memories(chat_id, query)
-
-        if not results:
-            return None
-
-        # Delete first match
-        memory_to_delete = results[0]
-        self.delete_memory(chat_id, memory_to_delete["id"])
-
-        return memory_to_delete
-
-    def get_all_memories(self, chat_id: int) -> List[dict]:
-        """Get all memories for a chat."""
-        return self._memories.get(chat_id, [])
-
-    def get_memory_categories(self, chat_id: int) -> Dict[str, List[dict]]:
-        """Get memories grouped by category."""
-        if chat_id not in self._memories:
-            return {}
-
-        categories = {}
-        for memory in self._memories[chat_id]:
-            category = memory.get("category", "other")
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(memory)
-
-        return categories
-
     def restore_from_json(self, json_content: str) -> bool:
         """Restore memories from JSON string. Returns True on success."""
         try:
             data = json.loads(json_content)
-            # Convert string keys to integers
-            self._memories = {int(k): v for k, v in data.items()}
+
+            # Handle new or old structure
+            if isinstance(data, dict) and "chats" in data and "users" in data:
+                # New structure
+                self._memories = {
+                    "chats": {int(k): v for k, v in data.get("chats", {}).items()},
+                    "users": {int(k): v for k, v in data.get("users", {}).items()},
+                }
+            else:
+                # Old structure - treat as chat memories
+                self._memories = {
+                    "chats": {int(k): v for k, v in data.items()},
+                    "users": {},
+                }
+
             self._save()
-            logger.info(f"Restored memories for {len(self._memories)} chats")
+            logger.info(
+                f"Restored memories: {len(self._memories['chats'])} chats, "
+                f"{len(self._memories['users'])} users"
+            )
             return True
         except Exception as e:
             logger.exception(f"Failed to restore memories: {e}")

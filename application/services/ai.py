@@ -465,23 +465,35 @@ class AIService:
                         content = f"Ошибка при очистке загадки: {str(e)}"
 
             elif name == "save_memory":
+                scope = args.get("scope", "chat").strip()
                 content_text = args.get("content", "").strip()
-                category = args.get("category", "other")
                 tags = args.get("tags", [])
 
-                if not content_text:
+                if scope not in ["chat", "user"]:
+                    content = "Error: scope must be 'chat' or 'user'"
+                elif not content_text:
                     content = "Error: Content is required"
                 elif not self._current_message:
                     content = "Error: Available only in message context"
                 else:
                     try:
                         chat_id = self._current_message.chat.id
-                        author_id = self._current_message.from_user.id
+                        user_id = self._current_message.from_user.id
+                        author_id = user_id
+
+                        # Determine scope_id based on scope
+                        if scope == "chat":
+                            scope_id = chat_id
+                            # Check for duplicates in chat memory
+                            existing_memories = self.memory_repo.get_chat_memories(chat_id)
+                        else:  # scope == "user"
+                            scope_id = user_id
+                            # Check for duplicates in user memory
+                            existing_memories = self.memory_repo.get_user_memories(user_id)
 
                         # Check for duplicates by tags
                         duplicate_found = None
                         if tags:
-                            existing_memories = self.memory_repo.get_all_memories(chat_id)
                             tags_set = set(tag.lower() for tag in tags)
 
                             for memory in existing_memories:
@@ -497,30 +509,38 @@ class AIService:
                             # Found duplicate by tags
                             mem_id = duplicate_found["id"][:8]
                             mem_content = duplicate_found["content"]
-                            mem_category = duplicate_found["category"]
                             mem_tags = ", ".join(duplicate_found.get("tags", []))
 
+                            scope_label = "чата" if scope == "chat" else "пользователя"
                             content = (
-                                f"❌ Такая запись уже существует:\n\n"
-                                f"[ID: {mem_id}...] ({mem_category})\n"
+                                f"❌ Такая запись уже существует в памяти {scope_label}:\n\n"
+                                f"[ID: {mem_id}]\n"
                                 f"{mem_content}\n"
                                 f"Теги: {mem_tags}\n\n"
-                                f"💡 Эта информация уже сохранена."
+                                f"💡 Эта информация уже сохранена, но её можно изменить."
                             )
                             logger.info(
-                                f"Duplicate memory found for chat {chat_id} by tags {tags}, not adding"
+                                f"Duplicate memory found in {scope} {scope_id} by tags {tags}, not adding"
                             )
                         else:
                             # No duplicate found, add as usual
-                            memory_id = self.memory_repo.add_memory(
-                                chat_id=chat_id,
-                                category=category,
-                                content=content_text,
-                                tags=tags,
-                                author_id=author_id,
-                            )
-                            content = f"✅ Запомнил ({category}): {content_text[:50]}..."
-                            logger.info(f"Saved memory {memory_id} for chat {chat_id}")
+                            if scope == "chat":
+                                memory_id = self.memory_repo.add_chat_memory(
+                                    chat_id=chat_id,
+                                    content=content_text,
+                                    tags=tags,
+                                    author_id=author_id,
+                                )
+                                content = f"✅ Запомнил (память чата): {content_text[:50]}..."
+                                logger.info(f"Saved chat memory {memory_id} for chat {chat_id}")
+                            else:  # scope == "user"
+                                memory_id = self.memory_repo.add_user_memory(
+                                    user_id=user_id, content=content_text, tags=tags
+                                )
+                                content = (
+                                    f"✅ Запомнил (память о пользователе): {content_text[:50]}..."
+                                )
+                                logger.info(f"Saved user memory {memory_id} for user {user_id}")
 
                             # Track memory update for user notification
                             self._memory_updates.append(f"{content_text[:300]}...")
@@ -528,24 +548,92 @@ class AIService:
                         logger.exception("Failed to save memory")
                         content = f"Ошибка при сохранении: {str(e)}"
 
-            elif name == "delete_memory":
-                search_query = args.get("search_query", "").strip()
+            elif name == "update_memory":
+                memory_id = args.get("memory_id", "").strip()
+                new_content = args.get("content")
+                new_tags = args.get("tags")
 
-                if not search_query:
-                    content = "Error: Search query is required"
+                if not memory_id:
+                    content = "Error: memory_id is required"
+                elif not new_content and not new_tags:
+                    content = "Error: At least one of content or tags must be provided"
                 elif not self._current_message:
                     content = "Error: Available only in message context"
                 else:
                     try:
                         chat_id = self._current_message.chat.id
+                        user_id = self._current_message.from_user.id
+
+                        # Try to find memory in chat first, then user
+                        updated = False
+                        scope_label = ""
+
+                        # Search in chat memories
+                        chat_memories = self.memory_repo.get_chat_memories(chat_id)
+                        for memory in chat_memories:
+                            if memory["id"].startswith(memory_id):
+                                updated = self.memory_repo.update_memory(
+                                    scope="chat",
+                                    scope_id=chat_id,
+                                    memory_id=memory["id"],
+                                    content=new_content,
+                                    tags=new_tags,
+                                )
+                                scope_label = "памяти чата"
+                                break
+
+                        # If not found in chat, search in user memories
+                        if not updated:
+                            user_memories = self.memory_repo.get_user_memories(user_id)
+                            for memory in user_memories:
+                                if memory["id"].startswith(memory_id):
+                                    updated = self.memory_repo.update_memory(
+                                        scope="user",
+                                        scope_id=user_id,
+                                        memory_id=memory["id"],
+                                        content=new_content,
+                                        tags=new_tags,
+                                    )
+                                    scope_label = "памяти о пользователе"
+                                    break
+
+                        if updated:
+                            content = f"✅ Обновил запись в {scope_label}"
+                            logger.info(f"Updated memory {memory_id}")
+                        else:
+                            content = f"❌ Не нашел записи с ID: {memory_id}"
+                    except Exception as e:
+                        logger.exception("Failed to update memory")
+                        content = f"Ошибка при обновлении: {str(e)}"
+
+            elif name == "delete_memory":
+                search_query = args.get("search_query", "").strip()
+                scope = args.get("scope", "chat").strip()
+
+                if not search_query:
+                    content = "Error: Search query is required"
+                elif scope not in ["chat", "user"]:
+                    content = "Error: scope must be 'chat' or 'user'"
+                elif not self._current_message:
+                    content = "Error: Available only in message context"
+                else:
+                    try:
+                        chat_id = self._current_message.chat.id
+                        user_id = self._current_message.from_user.id
+
+                        # Determine scope_id
+                        scope_id = chat_id if scope == "chat" else user_id
+                        scope_label = "памяти чата" if scope == "chat" else "памяти о пользователе"
 
                         # Search and delete
-                        found = self.memory_repo.search_and_delete(chat_id, search_query)
+                        found = self.memory_repo.search_and_delete(scope, scope_id, search_query)
                         if found:
-                            content = f"🗑️ Удалил из памяти: {found['content'][:50]}..."
-                            logger.info(f"Deleted memory from chat {chat_id}: {search_query}")
+                            content = f"🗑️ Удалил из {scope_label}: {found['content'][:50]}..."
+                            logger.info(f"Deleted memory from {scope} {scope_id}: {search_query}")
                         else:
-                            content = f"❌ Не нашел записи по запросу: {search_query}"
+                            content = (
+                                f"❌ Не нашел записи в {scope_label} по запросу: {search_query}"
+                            )
                     except Exception as e:
                         logger.exception("Failed to delete memory")
                         content = f"Ошибка при удалении: {str(e)}"

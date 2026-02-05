@@ -312,96 +312,95 @@ class RAGService:
         # Load memories if chat_id provided
         if chat_id:
             try:
+                from infrastructure.repositories.chat_logs import ChatLogsRepository
                 from infrastructure.repositories.memories import MemoryRepository
 
                 memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
-                all_categories = memory_repo.get_memory_categories(chat_id)
+                chat_logs_repo = ChatLogsRepository(self.config.CHATLOGS_FILE)
 
-                # Category priority mapping (higher = more important)
-                category_priorities = {
-                    "agreements": 9,
-                    "user_facts": 8,
-                    "games": 7,
-                    "events": 6,
-                    "other": 5,
-                }
+                memory_context = {}
 
-                # Smart category filtering based on prompt
-                prompt_lower = prompt.lower()
-                selected_memories = {}
+                # 1. Load chat memories (always include)
+                chat_memories = memory_repo.get_chat_memories(chat_id)
+                if chat_memories:
+                    # Sort by timestamp (newest first) and limit to recent ones
+                    sorted_memories = sorted(
+                        chat_memories, key=lambda m: m.get("timestamp", ""), reverse=True
+                    )
+                    memory_context["chat"] = [
+                        {
+                            "content": m["content"],
+                            "tags": m.get("tags", []),
+                            "timestamp": m.get("timestamp", ""),
+                        }
+                        for m in sorted_memories[:10]  # Limit to 10 most recent
+                    ]
 
-                # Always include agreements (critical)
-                if "agreements" in all_categories and all_categories["agreements"]:
-                    selected_memories["agreements"] = all_categories["agreements"]
+                # 2. Load user memories for active participants
+                # Get user IDs from recent chat history
+                try:
+                    recent_messages = chat_logs_repo.get_recent_messages(chat_id, limit=50)
+                    active_user_ids = set()
 
-                # Include user_facts if names/people mentioned
-                if "user_facts" in all_categories and all_categories["user_facts"]:
-                    # Simple heuristic: check if any common name indicators present
-                    if any(
-                        word in prompt_lower
-                        for word in ["кто", "who", "человек", "игрок", "user", "player"]
-                    ):
-                        selected_memories["user_facts"] = all_categories["user_facts"]
+                    for msg in recent_messages:
+                        # msg format: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
+                        if len(msg) >= 3:
+                            author = msg[1]
+                            is_bot = msg[2]
 
-                # Include games if game-related or has active games
-                if "games" in all_categories and all_categories["games"]:
-                    if any(
-                        word in prompt_lower
-                        for word in ["игра", "game", "загадка", "guess", "играть"]
-                    ):
-                        selected_memories["games"] = all_categories["games"]
+                            # Skip bot messages
+                            if is_bot:
+                                continue
 
-                # Include events if asking about past
-                if "events" in all_categories and all_categories["events"]:
-                    if any(
-                        word in prompt_lower
-                        for word in [
-                            "когда",
-                            "when",
-                            "было",
-                            "was",
-                            "помнишь",
-                            "remember",
-                            "прошлый",
-                            "past",
-                        ]
-                    ):
-                        selected_memories["events"] = all_categories["events"]
+                            # Try to extract user_id from author or message metadata
+                            # For now, we'll use the current user_id if available
+                            # This is a limitation - ideally we'd store author_id in chat logs
+                            if user_id:
+                                active_user_ids.add(user_id)
 
-                # Include other if nothing else matched (fallback)
-                if not selected_memories and "other" in all_categories:
-                    selected_memories["other"] = all_categories["other"][:3]  # Limit to 3
+                    # If we have the current user, always include them
+                    if user_id:
+                        active_user_ids.add(user_id)
 
-                # Prepare memory context with priorities
-                if selected_memories:
-                    memory_context = {}
-                    for category, memories in selected_memories.items():
-                        # Sort by timestamp (newest first) and limit
-                        sorted_memories = sorted(
-                            memories, key=lambda m: m.get("timestamp", ""), reverse=True
-                        )
-                        # Limit memories per category to avoid overwhelming context
-                        category_limit = 5 if category == "agreements" else 3
-                        limited_memories = sorted_memories[:category_limit]
+                    # Get memories for all active users
+                    if active_user_ids:
+                        users_memories = memory_repo.get_users_memories(list(active_user_ids))
 
-                        memory_context[category] = [
-                            {
-                                "content": m["content"],
-                                "tags": m.get("tags", []),
-                                "timestamp": m.get("timestamp", ""),
-                                "priority": category_priorities.get(category, 5),
-                            }
-                            for m in limited_memories
-                        ]
+                        if users_memories:
+                            user_memory_context = {}
+                            for uid, memories in users_memories.items():
+                                # Sort by timestamp (newest first)
+                                sorted_memories = sorted(
+                                    memories,
+                                    key=lambda m: m.get("timestamp", ""),
+                                    reverse=True,
+                                )
+                                # Limit to 5 most recent per user
+                                user_memory_context[str(uid)] = [
+                                    {
+                                        "content": m["content"],
+                                        "tags": m.get("tags", []),
+                                        "timestamp": m.get("timestamp", ""),
+                                    }
+                                    for m in sorted_memories[:5]
+                                ]
 
-                    if memory_context:
-                        context["memories"] = memory_context
-                        logger.debug(
-                            f"Added {sum(len(v) for v in memory_context.values())} memories to context for chat {chat_id}"
-                        )
+                            if user_memory_context:
+                                memory_context["users"] = user_memory_context
 
-            except Exception:
-                logger.exception("Failed to load memories for context")
+                except Exception as e:
+                    logger.warning(f"Failed to load user memories: {e}")
+
+                # Add memory context if we have any
+                if memory_context:
+                    context["memories"] = memory_context
+                    logger.debug(
+                        f"RAG: Added {len(memory_context.get('chat', []))} chat memories "
+                        f"and {len(memory_context.get('users', {}))} user memory entries"
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to load memories: {e}")
 
         return context
 
