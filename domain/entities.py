@@ -60,6 +60,7 @@ class MessageContext:
         has_image: bool = False,
         image_bytes: Optional[bytes] = None,
         mime_type: Optional[str] = None,
+        bot=None,
     ) -> "MessageContext":
         """Create MessageContext with structured RAG context (JSON format).
 
@@ -71,6 +72,7 @@ class MessageContext:
             has_image: Whether message contains image
             image_bytes: Image data if present
             mime_type: MIME type of image
+            bot: Aiogram Bot instance for fetching metadata (optional)
 
         Returns:
             MessageContext with rag_context as JSON string
@@ -80,9 +82,8 @@ class MessageContext:
             import json
 
             structured_context = await rag_service.build_structured_context(
-                prompt, user.id, chat.id
+                prompt, user.id, chat.id, bot=bot
             )
-            print(structured_context)
             rag_context = json.dumps(structured_context, ensure_ascii=False)
         except Exception:
             logger.exception("RAG: failed to build structured context")

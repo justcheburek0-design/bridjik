@@ -1,21 +1,5 @@
 [
-  {
-    "type": "function",
-    "function": {
-      "name": "get_player_info",
-      "description": "Get player information from MineBridge API by nickname or Telegram ID",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Player nickname or Telegram ID"
-          }
-        },
-        "required": ["query"]
-      }
-    }
-  },
+  
   {
     "type": "function",
     "function": {
@@ -40,29 +24,6 @@
             "type": "integer",
             "description": "Number of news items to fetch (max: 20)",
             "default": 10
-          },
-          "offset": {
-            "type": "integer",
-            "description": "Offset for pagination",
-            "default": 0
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_top_players",
-      "description": "Get top players from MineBridge",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "description": "Number of players to fetch (max: 15)",
-            "default": 5
           },
           "offset": {
             "type": "integer",
@@ -175,7 +136,7 @@
     "type": "function",
     "function": {
       "name": "save_memory",
-      "description": "Save important information to memory in neutral tone. IMPORTANT: Decide between 'chat' (local memes, jokes, chat-specific events) or 'user' (global info: city, education, health, preferences). Save in neutral, factual tone without mentioning who said or asked. Examples: CHAT: 'JustVayk - абоба' (local meme), USER: 'Живёт в Москве' (global info about person).",
+      "description": "Save important information to memory in neutral tone. IMPORTANT: Decide between 'chat' (local memes, jokes, chat-specific events) or 'user' (global info: city, education, health, preferences). Save in neutral, factual tone without mentioning who said or asked. Examples: CHAT: 'JustVayk - абоба' (local meme), USER: 'Живёт в Москве' (global info about person). Auto memory updates (💡 Память обновлена:), not need to write about new memory.",
       "parameters": {
         "type": "object",
         "properties": {

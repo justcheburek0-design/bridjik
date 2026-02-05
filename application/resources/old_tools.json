@@ -26,4 +26,42 @@
         "required": []
       }
     }
+  }, {
+    "type": "function",
+    "function": {
+      "name": "get_player_info",
+      "description": "Get player information from MineBridge API by nickname or Telegram ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Player nickname or Telegram ID"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  }, {
+    "type": "function",
+    "function": {
+      "name": "get_top_players",
+      "description": "Get top players from MineBridge",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of players to fetch (max: 15)",
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Offset for pagination",
+            "default": 0
+          }
+        },
+        "required": []
+      }
+    }
   }]

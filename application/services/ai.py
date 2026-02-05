@@ -543,7 +543,7 @@ class AIService:
                                 logger.info(f"Saved user memory {memory_id} for user {user_id}")
 
                             # Track memory update for user notification
-                            self._memory_updates.append(f"{content_text[:300]}...")
+                            self._memory_updates.append(f"{content_text}")
                     except Exception as e:
                         logger.exception("Failed to save memory")
                         content = f"Ошибка при сохранении: {str(e)}"
@@ -777,25 +777,39 @@ class AIService:
                 kb_text += f"\n{item['content']}\n"
             system_content += kb_text
 
+        # Add chat info
+        if "chat_info" in input_data:
+            chat_info = input_data["chat_info"]
+            info_text = "\n\n# Информация о чате:\n"
+            if title := chat_info.get("title"):
+                info_text += f"Название: {title}\n"
+            if desc := chat_info.get("description"):
+                info_text += f"Описание: {desc}\n"
+            if ctype := chat_info.get("type"):
+                info_text += f"Тип: {ctype}\n"
+            system_content += info_text
+
         # Add memory context
         if "memories" in input_data:
             mem_text = "\n\n# Память о чате:\n"
             for category, items in input_data["memories"].items():
-                if items:
-                    # Format category name nicely
-                    category_names = {
-                        "user_facts": "Факты о людях",
-                        "events": "События",
-                        "agreements": "Договоренности",
-                        "games": "Игры",
-                        "other": "Прочее",
-                    }
-                    category_display = category_names.get(
-                        category, category.replace("_", " ").title()
-                    )
-                    mem_text += f"\n## {category_display}:\n"
+                if not items:
+                    continue
+
+                # Special handling for users dictionary
+                if category == "users" and isinstance(items, dict):
+                    for uid, user_mems in items.items():
+                        if isinstance(user_mems, list):
+                            for item in user_mems:
+                                if isinstance(item, dict):
+                                    mem_text += f"- {item.get('content', '')}\n"
+                    continue
+
+                # Standard list handling
+                if isinstance(items, list):
                     for item in items:
-                        mem_text += f"- {item['content']}\n"
+                        if isinstance(item, dict):
+                            mem_text += f"- {item.get('content', '')}\n"
             system_content += mem_text
 
         messages = [{"role": "system", "content": system_content}]

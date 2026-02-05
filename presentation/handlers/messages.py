@@ -217,6 +217,7 @@ async def auto_reply(
             has_image=bool(image_bytes),
             image_bytes=image_bytes,
             mime_type=mime_type,
+            bot=message.bot,
         )
 
         # Save Incoming to logs
@@ -244,9 +245,9 @@ async def auto_reply(
         answer = truncate_text(answer, config.MAX_OUTPUT_LENGTH)
 
         # Memory updates are now included in AI response itself, no need to append
-        # if memory_updates:
-        #     memory_info = "\n\n💡 <b>Память обновлена:</b> " + memory_updates[0]
-        #     answer += memory_info
+        if memory_updates:
+            memory_info = "\n\n💡 <b>Память обновлена:</b> " + memory_updates[0]
+            answer += memory_info
 
         # Send Answer
         sent_messages = await media_service.long_text(

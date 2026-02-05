@@ -279,9 +279,19 @@ class RAGService:
         return [(self._rag_chunks[i], float(adj[i])) for i in selected_idx]
 
     async def build_structured_context(
-        self, prompt: str, user_id: Optional[int] = None, chat_id: Optional[int] = None
+        self,
+        prompt: str,
+        user_id: Optional[int] = None,
+        chat_id: Optional[int] = None,
+        bot=None,
     ) -> dict:
         """Build structured context from RAG chunks and memory as JSON object.
+
+        Args:
+            prompt: User query
+            user_id: User ID for personalization
+            chat_id: Chat ID for context
+            bot: Aiogram Bot instance for fetching chat metadata
 
         Returns:
             Dictionary with structured context data
@@ -316,7 +326,39 @@ class RAGService:
                 from infrastructure.repositories.memories import MemoryRepository
 
                 memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
-                chat_logs_repo = ChatLogsRepository(self.config.CHATLOGS_FILE)
+                chat_logs_repo = ChatLogsRepository(self.config.CHAT_LOGS_FILE)
+
+                # --- Chat Metadata (Logic start) ---
+                chat_metadata = {}
+
+                # 1. Try to fetch from API if bot is available
+                if bot:
+                    try:
+                        chat_full = await bot.get_chat(chat_id)
+                        chat_metadata = {
+                            "title": chat_full.title or chat_full.first_name,
+                            "type": chat_full.type,
+                            "description": getattr(chat_full, "description", None),
+                            "invite_link": getattr(chat_full, "invite_link", None),
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        # Add any other useful fields safely
+                        if hasattr(chat_full, "username") and chat_full.username:
+                            chat_metadata["username"] = chat_full.username
+
+                        # Cache the fresh metadata
+                        memory_repo.save_chat_metadata(chat_id, chat_metadata)
+                    except Exception as e:
+                        logger.warning(f"RAG: Failed to fetch chat info for {chat_id}: {e}")
+
+                # 2. If no data from API (or failed), try to load from cache
+                if not chat_metadata:
+                    chat_metadata = memory_repo.get_chat_metadata(chat_id)
+
+                # 3. Add to context if we have anything
+                if chat_metadata:
+                    context["chat_info"] = chat_metadata
+                # --- Chat Metadata (Logic end) ---
 
                 memory_context = {}
 
@@ -345,7 +387,6 @@ class RAGService:
                     for msg in recent_messages:
                         # msg format: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
                         if len(msg) >= 3:
-                            author = msg[1]
                             is_bot = msg[2]
 
                             # Skip bot messages

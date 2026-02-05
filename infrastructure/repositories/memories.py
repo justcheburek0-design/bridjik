@@ -32,16 +32,30 @@ class MemoryRepository(IMemoryRepository):
 
             # Handle new structure
             if isinstance(data, dict) and "chats" in data and "users" in data:
-                # New structure: {"chats": {...}, "users": {...}}
+                chats_data = {}
+                # Migration logic: convert list to dict if needed
+                for k, v in data.get("chats", {}).items():
+                    chat_id = int(k)
+                    if isinstance(v, list):
+                        # Old structure: list of memories
+                        chats_data[chat_id] = {"memories": v, "metadata": {}}
+                    elif isinstance(v, dict):
+                        # New structure or already migrated
+                        chats_data[chat_id] = {
+                            "memories": v.get("memories", []),
+                            "metadata": v.get("metadata", {}),
+                        }
+                    else:
+                        chats_data[chat_id] = {"memories": [], "metadata": {}}
+
                 self._memories = {
-                    "chats": {int(k): v for k, v in data.get("chats", {}).items()},
+                    "chats": chats_data,
                     "users": {int(k): v for k, v in data.get("users", {}).items()},
                 }
             else:
-                # Old structure: just chat_id -> memories
-                # Treat all as chat memories
+                # Very old structure: just chat_id -> memories
                 self._memories = {
-                    "chats": {int(k): v for k, v in data.items()},
+                    "chats": {int(k): {"memories": v, "metadata": {}} for k, v in data.items()},
                     "users": {},
                 }
 
@@ -70,6 +84,25 @@ class MemoryRepository(IMemoryRepository):
         except Exception as e:
             logger.exception("Failed to save memories: %s", e)
 
+    def get_chat_metadata(self, chat_id: int) -> dict:
+        """Get cached metadata for a chat."""
+        chat_data = self._memories["chats"].get(chat_id)
+        if chat_data:
+            return chat_data.get("metadata", {})
+        return {}
+
+    def save_chat_metadata(self, chat_id: int, metadata: dict) -> None:
+        """Save metadata for a chat."""
+        if chat_id not in self._memories["chats"]:
+            self._memories["chats"][chat_id] = {"memories": [], "metadata": {}}
+
+        # Update metadata, don't overwrite blindly if we want to merge (but usually overwrite is fine for sync)
+        # Here we'll just replace it as requested, or merge? Let's merge for safety.
+        current_meta = self._memories["chats"][chat_id].get("metadata", {})
+        current_meta.update(metadata)
+        self._memories["chats"][chat_id]["metadata"] = current_meta
+        self._save()
+
     def add_chat_memory(
         self,
         chat_id: int,
@@ -89,9 +122,9 @@ class MemoryRepository(IMemoryRepository):
         }
 
         if chat_id not in self._memories["chats"]:
-            self._memories["chats"][chat_id] = []
+            self._memories["chats"][chat_id] = {"memories": [], "metadata": {}}
 
-        self._memories["chats"][chat_id].append(memory)
+        self._memories["chats"][chat_id]["memories"].append(memory)
         self._save()
 
         logger.info(f"Added chat memory {memory_id} to chat {chat_id}")
@@ -140,12 +173,16 @@ class MemoryRepository(IMemoryRepository):
             logger.warning(f"Invalid scope: {scope}")
             return False
 
-        scope_key = "chats" if scope == "chat" else "users"
+        if scope == "chat":
+            if scope_id not in self._memories["chats"]:
+                return False
+            memories_list = self._memories["chats"][scope_id]["memories"]
+        else:
+            if scope_id not in self._memories["users"]:
+                return False
+            memories_list = self._memories["users"][scope_id]
 
-        if scope_id not in self._memories[scope_key]:
-            return False
-
-        for memory in self._memories[scope_key][scope_id]:
+        for memory in memories_list:
             if memory["id"] == memory_id:
                 # Update fields if provided
                 if content is not None:
@@ -156,7 +193,7 @@ class MemoryRepository(IMemoryRepository):
                 memory["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._save()
 
-                logger.info(f"Updated {scope} memory {memory_id} in {scope_key} {scope_id}")
+                logger.info(f"Updated {scope} memory {memory_id} in {scope} {scope_id}")
                 return True
 
         return False
@@ -167,37 +204,42 @@ class MemoryRepository(IMemoryRepository):
             logger.warning(f"Invalid scope: {scope}")
             return False
 
-        scope_key = "chats" if scope == "chat" else "users"
+        if scope == "chat":
+            if scope_id not in self._memories["chats"]:
+                return False
+            memories_list = self._memories["chats"][scope_id]["memories"]
+            original_count = len(memories_list)
+            self._memories["chats"][scope_id]["memories"] = [
+                m for m in memories_list if m["id"] != memory_id
+            ]
+            deleted = len(self._memories["chats"][scope_id]["memories"]) < original_count
+        else:
+            if scope_id not in self._memories["users"]:
+                return False
+            memories_list = self._memories["users"][scope_id]
+            original_count = len(memories_list)
+            self._memories["users"][scope_id] = [m for m in memories_list if m["id"] != memory_id]
+            deleted = len(self._memories["users"][scope_id]) < original_count
 
-        if scope_id not in self._memories[scope_key]:
-            return False
-
-        original_count = len(self._memories[scope_key][scope_id])
-        self._memories[scope_key][scope_id] = [
-            m for m in self._memories[scope_key][scope_id] if m["id"] != memory_id
-        ]
-
-        deleted = len(self._memories[scope_key][scope_id]) < original_count
         if deleted:
             self._save()
-            logger.info(f"Deleted {scope} memory {memory_id} from {scope_key} {scope_id}")
+            logger.info(f"Deleted {scope} memory {memory_id} from {scope} {scope_id}")
 
         return deleted
 
     def get_chat_memories(self, chat_id: int) -> List[dict]:
         """Get all memories for a chat."""
-        return self._memories["chats"].get(chat_id, [])
+        chat_data = self._memories["chats"].get(chat_id)
+        if chat_data:
+            return chat_data.get("memories", [])
+        return []
 
     def get_user_memories(self, user_id: int) -> List[dict]:
         """Get all memories about a user."""
         return self._memories["users"].get(user_id, [])
 
     def get_users_memories(self, user_ids: List[int]) -> dict:
-        """Get memories about multiple users.
-
-        Returns:
-            Dictionary mapping user_id -> list of memories
-        """
+        """Get memories about multiple users."""
         result = {}
         for user_id in user_ids:
             memories = self._memories["users"].get(user_id, [])
@@ -208,24 +250,24 @@ class MemoryRepository(IMemoryRepository):
     def search_memories(self, scope: str, scope_id: int, query: str) -> List[dict]:
         """Search memories by tags or content."""
         if scope not in ["chat", "user"]:
-            logger.warning(f"Invalid scope: {scope}")
             return []
 
-        scope_key = "chats" if scope == "chat" else "users"
-
-        if scope_id not in self._memories[scope_key]:
-            return []
+        if scope == "chat":
+            if scope_id not in self._memories["chats"]:
+                return []
+            memories_list = self._memories["chats"][scope_id]["memories"]
+        else:
+            if scope_id not in self._memories["users"]:
+                return []
+            memories_list = self._memories["users"][scope_id]
 
         query_lower = query.lower()
         results = []
 
-        for memory in self._memories[scope_key][scope_id]:
-            # Check content
+        for memory in memories_list:
             if query_lower in memory.get("content", "").lower():
                 results.append(memory)
                 continue
-
-            # Check tags
             tags = memory.get("tags", [])
             if any(query_lower in tag.lower() for tag in tags):
                 results.append(memory)
@@ -254,68 +296,48 @@ class MemoryRepository(IMemoryRepository):
         limit: int = 3,
         similarity_threshold: float = 0.7,
     ) -> List[Tuple[dict, float]]:
-        """Find similar memories using semantic search via RAG.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            content: Content to search for similar memories
-            rag_service: RAG service instance for embeddings
-            limit: Maximum number of similar memories to return
-            similarity_threshold: Minimum similarity score (0.0-1.0)
-
-        Returns:
-            List of tuples (memory_dict, similarity_score), sorted by similarity desc
-        """
+        """Find similar memories using semantic search via RAG."""
         if scope not in ["chat", "user"]:
-            logger.warning(f"Invalid scope: {scope}")
             return []
 
-        scope_key = "chats" if scope == "chat" else "users"
+        if scope == "chat":
+            if scope_id not in self._memories["chats"]:
+                return []
+            memories = self._memories["chats"][scope_id]["memories"]
+        else:
+            if scope_id not in self._memories["users"]:
+                return []
+            memories = self._memories["users"][scope_id]
 
-        if scope_id not in self._memories[scope_key] or not self._memories[scope_key][scope_id]:
+        if not memories:
             return []
 
         try:
             import numpy as np
 
             # Get all memories for this scope
-            memories = self._memories[scope_key][scope_id]
-            if not memories:
-                return []
-
-            # Get embeddings for query content and all memory contents
             all_texts = [content] + [m["content"] for m in memories]
             embeddings = await rag_service._embed_batch(all_texts)
 
             if not embeddings or len(embeddings) != len(all_texts):
-                logger.warning("Failed to get embeddings for similarity search")
                 return []
 
-            # Query embedding is first
             query_emb = np.array(embeddings[0], dtype="float32")
             query_emb /= max(np.linalg.norm(query_emb), 1e-12)
 
-            # Memory embeddings are the rest
             memory_embs = np.array(embeddings[1:], dtype="float32")
-            # Normalize each row
             norms = np.linalg.norm(memory_embs, axis=1, keepdims=True)
             norms = np.maximum(norms, 1e-12)
             memory_embs /= norms
 
-            # Compute cosine similarities
             similarities = memory_embs @ query_emb
 
-            # Find indices of memories above threshold
             results = []
             for idx, sim in enumerate(similarities):
                 if sim >= similarity_threshold:
                     results.append((memories[idx], float(sim)))
 
-            # Sort by similarity descending
             results.sort(key=lambda x: x[1], reverse=True)
-
-            # Return top N
             return results[:limit]
 
         except Exception as e:
@@ -327,25 +349,35 @@ class MemoryRepository(IMemoryRepository):
         try:
             data = json.loads(json_content)
 
-            # Handle new or old structure
-            if isinstance(data, dict) and "chats" in data and "users" in data:
-                # New structure
-                self._memories = {
-                    "chats": {int(k): v for k, v in data.get("chats", {}).items()},
-                    "users": {int(k): v for k, v in data.get("users", {}).items()},
-                }
+            chats_data = {}
+            if isinstance(data, dict) and "chats" in data:
+                # Same migration logic as _load
+                for k, v in data.get("chats", {}).items():
+                    chat_id = int(k)
+                    if isinstance(v, list):
+                        chats_data[chat_id] = {"memories": v, "metadata": {}}
+                    elif isinstance(v, dict):
+                        chats_data[chat_id] = {
+                            "memories": v.get("memories", []),
+                            "metadata": v.get("metadata", {}),
+                        }
+                    else:
+                        chats_data[chat_id] = {"memories": [], "metadata": {}}
             else:
-                # Old structure - treat as chat memories
-                self._memories = {
-                    "chats": {int(k): v for k, v in data.items()},
-                    "users": {},
-                }
+                # Old structure fallback
+                for k, v in data.items():
+                    if k != "users":
+                        chats_data[int(k)] = {"memories": v, "metadata": {}}
+
+            self._memories = {
+                "chats": chats_data,
+                "users": (
+                    {int(k): v for k, v in data.get("users", {}).items()} if "users" in data else {}
+                ),
+            }
 
             self._save()
-            logger.info(
-                f"Restored memories: {len(self._memories['chats'])} chats, "
-                f"{len(self._memories['users'])} users"
-            )
+            logger.info("Restored memories successfully")
             return True
         except Exception as e:
             logger.exception(f"Failed to restore memories: {e}")

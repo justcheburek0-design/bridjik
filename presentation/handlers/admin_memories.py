@@ -103,9 +103,21 @@ async def _show_admin_view(
         if index < 0:
             index = 0
 
-        scope_id, memories = items[index]
+        scope_id, data_obj = items[index]
 
-        text = f"<b>{scope_icon} ID: <code>{scope_id}</code></b>\n"
+        if scope == "chats":
+            # Chat data is now a dict with "memories" and "metadata"
+            memories = data_obj.get("memories", [])
+            metadata = data_obj.get("metadata", {})
+
+            text = f"<b>{scope_icon} ID: <code>{scope_id}</code></b>\n"
+            if title := metadata.get("title"):
+                text += f"📌 <b>{title}</b>\n"
+        else:
+            # User data is still a list of memories
+            memories = data_obj
+            text = f"<b>{scope_icon} ID: <code>{scope_id}</code></b>\n"
+
         text += f"<i>{index + 1} из {len(items)}</i>\n\n"
         text += _format_memory_list(memories)
 
