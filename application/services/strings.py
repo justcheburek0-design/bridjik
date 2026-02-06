@@ -45,41 +45,52 @@ class StringsService:
     def load_system_prompt_for_chat(self, chat: types.Chat, guesses_repo=None) -> str:
         """Load chat-specific system prompt text, falling back to default."""
         try:
+            # 1. Load the template
+            template_path = self.config.PROMPTS_DIR / "template.txt"
+            template_text = "{prompt}"  # Default fallback if template is missing
+            if template_path.exists():
+                loaded_template = self._read_txt_prompt(template_path)
+                if loaded_template:
+                    template_text = loaded_template
+
+            # 2. Determine raw prompt text (specific to chat or default)
+            raw_prompt_text = ""
+
+            # Try finding group-specific prompt first
             if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
                 group_path = self.config.PROMPTS_DIR / f"{chat.id}.txt"
                 if group_path.exists():
-                    text = self._read_txt_prompt(group_path)
-                    if text:
+                    raw_prompt_text = self._read_txt_prompt(group_path)
+                    if raw_prompt_text:
                         logger.debug("Loaded group prompt from %s", group_path)
                         # Check if game is active and add to prompt
                         if guesses_repo:
                             guessed_obj = guesses_repo.get_guess(chat.id)
                             if guessed_obj:
-                                text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на воп росы пользователя о загаданном предмете, помогая ему угадать."
-                        return text
+                                raw_prompt_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
 
-            default_path = self.config.PROMPTS_DIR / "default.txt"
-            if default_path.exists():
-                text = self._read_txt_prompt(default_path)
-                if text:
-                    logger.debug("Loaded default prompt")
-                    # Check if game is active and add to prompt
-                    if guesses_repo:
-                        guessed_obj = guesses_repo.get_guess(chat.id)
-                        if guessed_obj:
-                            text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
-                    return text
-        except FileNotFoundError:
-            logger.warning("Prompt .txt file not found; using builtin fallback")
+                default_path = self.config.PROMPTS_DIR / "default.txt"
+                if default_path.exists():
+                    raw_prompt_text = self._read_txt_prompt(default_path)
+                    if raw_prompt_text:
+                        logger.debug("Loaded default prompt from %s", default_path)
+
+            # Final fallback if files are completely missing
+            if not raw_prompt_text:
+                logger.warning("No prompt .txt files found; using builtin fallback")
+                raw_prompt_text = ""
+
+            # 3. Apply template
+            final_text = template_text.replace("{prompt}", raw_prompt_text)
+
+            # 4. Check if game is active and add to prompt
+            if guesses_repo:
+                guessed_obj = guesses_repo.get_guess(chat.id)
+                if guessed_obj:
+                    final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
+
+            return final_text
+
         except Exception:
             logger.exception("Failed to load .txt prompt")
-
-        base_text = "Ты — бот MineBridge, помощник игроков Minecraft-сервера. Отвечай кратко, дружелюбно и по делу."
-
-        # Check if game is active and add to prompt
-        if guesses_repo:
-            guessed_obj = guesses_repo.get_guess(chat.id)
-            if guessed_obj:
-                base_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
-
-        return base_text
+            return "Ты — бот MineBridge. Произошла ошибка загрузки промта."
