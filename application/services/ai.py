@@ -549,12 +549,15 @@ class AIService:
                         content = f"Ошибка при сохранении: {str(e)}"
 
             elif name == "update_memory":
-                memory_id = args.get("memory_id", "").strip()
+                search_query = args.get("search_query", "").strip()
+                scope = args.get("scope", "chat").strip()
                 new_content = args.get("content")
                 new_tags = args.get("tags")
 
-                if not memory_id:
-                    content = "Error: memory_id is required"
+                if not search_query:
+                    content = "Error: search_query is required"
+                elif scope not in ["chat", "user"]:
+                    content = "Error: scope must be 'chat' or 'user'"
                 elif not new_content and not new_tags:
                     content = "Error: At least one of content or tags must be provided"
                 elif not self._current_message:
@@ -564,44 +567,38 @@ class AIService:
                         chat_id = self._current_message.chat.id
                         user_id = self._current_message.from_user.id
 
-                        # Try to find memory in chat first, then user
-                        updated = False
-                        scope_label = ""
+                        # Determine scope_id
+                        scope_id = chat_id if scope == "chat" else user_id
+                        scope_label = "памяти чата" if scope == "chat" else "памяти о пользователе"
 
-                        # Search in chat memories
-                        chat_memories = self.memory_repo.get_chat_memories(chat_id)
-                        for memory in chat_memories:
-                            if memory["id"].startswith(memory_id):
-                                updated = self.memory_repo.update_memory(
-                                    scope="chat",
-                                    scope_id=chat_id,
-                                    memory_id=memory["id"],
-                                    content=new_content,
-                                    tags=new_tags,
-                                )
-                                scope_label = "памяти чата"
-                                break
+                        # Search for memory
+                        found_memories = self.memory_repo.search_memories(
+                            scope, scope_id, search_query
+                        )
 
-                        # If not found in chat, search in user memories
-                        if not updated:
-                            user_memories = self.memory_repo.get_user_memories(user_id)
-                            for memory in user_memories:
-                                if memory["id"].startswith(memory_id):
-                                    updated = self.memory_repo.update_memory(
-                                        scope="user",
-                                        scope_id=user_id,
-                                        memory_id=memory["id"],
-                                        content=new_content,
-                                        tags=new_tags,
-                                    )
-                                    scope_label = "памяти о пользователе"
-                                    break
+                        if found_memories:
+                            # Update the first match
+                            memory_to_update = found_memories[0]
+                            memory_id = memory_to_update["id"]
 
-                        if updated:
-                            content = f"✅ Обновил запись в {scope_label}"
-                            logger.info(f"Updated memory {memory_id}")
+                            updated = self.memory_repo.update_memory(
+                                scope=scope,
+                                scope_id=scope_id,
+                                memory_id=memory_id,
+                                content=new_content,
+                                tags=new_tags,
+                            )
+
+                            if updated:
+                                content = f"✅ Обновил запись в {scope_label}: {memory_to_update['content'][:50]}..."
+                                logger.info(f"Updated memory {memory_id} in {scope} {scope_id}")
+                            else:
+                                content = f"❌ Не удалось обновить запись (ID: {memory_id})"
                         else:
-                            content = f"❌ Не нашел записи с ID: {memory_id}"
+                            content = (
+                                f"❌ Не нашел записи в {scope_label} по запросу: {search_query}"
+                            )
+
                     except Exception as e:
                         logger.exception("Failed to update memory")
                         content = f"Ошибка при обновлении: {str(e)}"

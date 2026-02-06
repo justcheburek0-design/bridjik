@@ -1,10 +1,9 @@
 [
-  
   {
     "type": "function",
     "function": {
       "name": "get_stickers",
-      "description": "Get list of available stickers. You can use sticker: [sticker:name] (max 1 sticker for message)",
+      "description": "Get list of available stickers.",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -113,7 +112,7 @@
         "properties": {
           "object": {
             "type": "string",
-            "description": "The Minecraft object you've chosen (mob, item, creature, GUI interface, event like rain, etc.) in Russian"
+            "description": "The object you've chosen in Russian"
           }
         },
         "required": ["object"]
@@ -136,18 +135,18 @@
     "type": "function",
     "function": {
       "name": "save_memory",
-      "description": "Save important information to memory in neutral tone. IMPORTANT: Decide between 'chat' (local memes, jokes, chat-specific events) or 'user' (global info: city, education, health, preferences). Save in neutral, factual tone without mentioning who said or asked. Examples: CHAT: 'JustVayk - абоба' (local meme), USER: 'Живёт в Москве' (global info about person). Auto memory updates (💡 Память обновлена:), not need to write about new memory.",
+      "description": "Save important information to memory.",
       "parameters": {
         "type": "object",
         "properties": {
           "scope": {
             "type": "string",
             "enum": ["chat", "user"],
-            "description": "Memory type: 'chat' for local memes/jokes/chat events, 'user' for global personal info (city, education, health, preferences)"
+            "description": "Memory type: 'chat' for local memes/jokes/chat events, 'user' for global personal info"
           },
           "content": {
             "type": "string",
-            "description": "What to remember in NEUTRAL TONE. Don't include source ('сообщил', 'попросил', 'из новостей'). Just the fact. Examples: 'JustVayk - абоба' (not 'JustCheburek сказал что...'), '6 февраля 2026 в MineBridge королевская битва' (not 'согласно новостям...')"
+            "description": "What to remember in NEUTRAL TONE"
           },
           "tags": {
             "type": "array",
@@ -167,9 +166,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "memory_id": {
+          "search_query": {
             "type": "string",
-            "description": "ID of memory to update (can be partial, e.g., first 8 characters)"
+            "description": "Search query to find the record to update"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["chat", "user"],
+            "description": "Where to search: 'chat' or 'user' memory (optional, searches in current chat by default)"
           },
           "content": {
             "type": "string",
@@ -181,7 +185,7 @@
             "description": "New tags (optional, leave empty to keep current)"
           }
         },
-        "required": ["memory_id"]
+        "required": ["search_query"]
       }
     }
   },

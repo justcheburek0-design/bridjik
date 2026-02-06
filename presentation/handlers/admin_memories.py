@@ -21,7 +21,7 @@ class MemoryStates(StatesGroup):
     # Admin states
     admin_viewing = State()  # scope: "chats"/"users", index: int
     waiting_for_search_query = State()
-    waiting_for_delete_id = State()
+    waiting_for_delete_query = State()
     waiting_for_restore_file = State()
 
     # User states
@@ -375,9 +375,9 @@ async def start_delete(callback: types.CallbackQuery, state: FSMContext, config:
         await callback.answer("Недостаточно прав", show_alert=True)
         return
 
-    await state.set_state(MemoryStates.waiting_for_delete_id)
+    await state.set_state(MemoryStates.waiting_for_delete_query)
     await callback.message.answer(
-        "❌ <b>Удаление</b>\nВведите ID записи:",
+        "❌ <b>Удаление</b>\nВведите текст для поиска и удаления (будет удалено первое совпадение):",
         parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[
@@ -397,30 +397,38 @@ async def cancel_delete(
     await _show_admin_view(callback, memory_repo, state, edit=True)
 
 
-@router.message(MemoryStates.waiting_for_delete_id)
+@router.message(MemoryStates.waiting_for_delete_query)
 async def process_delete(message: types.Message, state: FSMContext, memory_repo: MemoryRepository):
-    """Process delete by ID."""
-    mem_id = message.text.strip()
-    deleted = False
+    """Process delete by query."""
+    query = message.text.strip()
+    deleted_memory = None
+    scope_label = ""
+    scope_id_found = None
 
     # Try delete from chats
     for chat_id in list(memory_repo._memories.get("chats", {}).keys()):
-        for m in memory_repo.get_chat_memories(chat_id):
-            if m["id"].startswith(mem_id):
-                memory_repo.delete_memory("chat", chat_id, m["id"])
-                deleted = True
+        deleted_memory = memory_repo.search_and_delete("chat", chat_id, query)
+        if deleted_memory:
+            scope_label = "чата"
+            scope_id_found = chat_id
+            break
+
+    # Try delete from users if not found in chats
+    if not deleted_memory:
+        for user_id in list(memory_repo._memories.get("users", {}).keys()):
+            deleted_memory = memory_repo.search_and_delete("user", user_id, query)
+            if deleted_memory:
+                scope_label = "пользователя"
+                scope_id_found = user_id
                 break
 
-    # Try delete from users
-    if not deleted:
-        for user_id in list(memory_repo._memories.get("users", {}).keys()):
-            for m in memory_repo.get_user_memories(user_id):
-                if m["id"].startswith(mem_id):
-                    memory_repo.delete_memory("user", user_id, m["id"])
-                    deleted = True
-                    break
-
-    text = "✅ Удалено" if deleted else f"❌ ID '{mem_id}' не найден"
+    if deleted_memory:
+        content_preview = deleted_memory["content"]
+        if len(content_preview) > 50:
+            content_preview = content_preview[:47] + "..."
+        text = f"✅ Удалено из памяти {scope_label} {scope_id_found}:\n\n<i>{content_preview}</i>"
+    else:
+        text = f"❌ Не найдено записей по запросу '<code>{query}</code>'"
 
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
@@ -428,7 +436,7 @@ async def process_delete(message: types.Message, state: FSMContext, memory_repo:
         ]
     )
 
-    await message.answer(text, reply_markup=kb)
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
     await state.set_state(MemoryStates.admin_viewing)
 
 

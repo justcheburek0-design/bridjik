@@ -63,11 +63,6 @@ class StringsService:
                     raw_prompt_text = self._read_txt_prompt(group_path)
                     if raw_prompt_text:
                         logger.debug("Loaded group prompt from %s", group_path)
-                        # Check if game is active and add to prompt
-                        if guesses_repo:
-                            guessed_obj = guesses_repo.get_guess(chat.id)
-                            if guessed_obj:
-                                raw_prompt_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
 
                 default_path = self.config.PROMPTS_DIR / "default.txt"
                 if default_path.exists():
@@ -87,7 +82,7 @@ class StringsService:
             if guesses_repo:
                 guessed_obj = guesses_repo.get_guess(chat.id)
                 if guessed_obj:
-                    final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}\nНе раскрывай это слово напрямую. Отвечай на вопросы пользователя о загаданном предмете, помогая ему угадать."
+                    final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}."
 
             return final_text
 
