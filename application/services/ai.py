@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, List, Optional, Tuple
 
@@ -145,10 +146,8 @@ class AIService:
         # Reset memory updates tracker
         self._memory_updates = []
 
-        user_input, original_chat_context = await self._build_user_input(context, message)
-        messages = self._build_messages(
-            full_system_prompt, user_input, context, original_chat_context
-        )
+        messages = self._build_messages(full_system_prompt, context, message)
+        print(messages)
         tools = self._get_tools()
 
         try:
@@ -734,93 +733,137 @@ class AIService:
     def _build_messages(
         self,
         system_prompt: str,
-        user_input: str,
         context: MessageContext,
-        chat_context: Optional[dict] = None,
+        message: Optional[types.Message] = None,
     ) -> List[dict]:
         """Build messages list for OpenAI API.
 
-        Creates a list of messages in OpenAI format:
-        [
-            {"role": "system", "content": "..."},
-            {"role": "user", "content": "..."},
-            {"role": "assistant", "content": "..."},
-            ...
-        ]
-
         Args:
             system_prompt: System prompt text
-            user_input: User input JSON string with context
             context: Message context
+            message: Telegram message for additional context
 
         Returns:
             List of message dictionaries in OpenAI format
         """
-        import json
+        # 1. Build System Message
+        # Add Date
+        moscow_tz = timezone(timedelta(hours=3))
+        date = datetime.now(tz=moscow_tz).isoformat()
+        system_prompt += f"\n\nТекущая дата: {date}"
 
-        # Parse user_input JSON to extract context
-        try:
-            input_data = json.loads(user_input)
-        except json.JSONDecodeError:
-            input_data = {"current_message": {"text": user_input}}
+        # Add RAG Knowledge Base
+        if context.rag_context:
+            try:
+                # Try to parse RAG context as JSON
+                rag_data = json.loads(context.rag_context)
 
-        # Build system message with RAG context
-        system_content = system_prompt
-        if "current_date" in input_data:
-            system_content += f"\n\nТекущая дата: {input_data['current_date']}"
-        if "knowledge_base" in input_data:
-            kb_text = "\n\n# База знаний:\n"
-            for item in input_data["knowledge_base"]:
-                kb_text += f"\n{item['content']}\n"
-            system_content += kb_text
+                if "knowledge_base" in rag_data:
+                    kb_text = "\n\n# База знаний:\n"
+                    for item in rag_data["knowledge_base"]:
+                        kb_text += f"\n{item['content']}\n"
+                    system_prompt += kb_text
 
-        # Add chat info
-        if "chat_info" in input_data:
-            chat_info = input_data["chat_info"]
-            info_text = "\n\n# Информация о чате:\n"
-            if title := chat_info.get("title"):
-                info_text += f"Название: {title}\n"
-            if desc := chat_info.get("description"):
-                info_text += f"Описание: {desc}\n"
-            if ctype := chat_info.get("type"):
-                info_text += f"Тип: {ctype}\n"
-            system_content += info_text
+                # Add Chat Info if present in RAG data (unlikely but possible)
+                if "chat_info" in rag_data:
+                    # ... logic from previous _build_user_input
+                    pass
 
-        # Add memory context
-        if "memories" in input_data:
-            mem_text = "\n\n# Память о чате:\n"
-            for category, items in input_data["memories"].items():
-                if not items:
-                    continue
+            except (json.JSONDecodeError, TypeError):
+                # Fallback if RAG context is just text
+                system_prompt += f"\n\n# Контекст:\n{context.rag_context}"
 
-                # Special handling for users dictionary
-                if category == "users" and isinstance(items, dict):
-                    for uid, user_mems in items.items():
-                        if isinstance(user_mems, list):
-                            for item in user_mems:
+        # Add Chat/User Memories
+        # todo: переделать
+        mem_text = "\n\n# Память:\n"
+        has_memories = False
+
+        if context.rag_context:
+            try:
+                rag_data = json.loads(context.rag_context)
+                if "memories" in rag_data:
+                    for category, items in rag_data["memories"].items():
+                        if not items:
+                            continue
+
+                        # Special handling for users dictionary
+                        if category == "users" and isinstance(items, dict):
+                            for uid, user_mems in items.items():
+                                if isinstance(user_mems, list):
+                                    for item in user_mems:
+                                        if isinstance(item, dict):
+                                            mem_text += f"- {item.get('content', '')}\n"
+                                            has_memories = True
+                            continue
+
+                        # Standard list handling
+                        if isinstance(items, list):
+                            for item in items:
                                 if isinstance(item, dict):
                                     mem_text += f"- {item.get('content', '')}\n"
-                    continue
+                                    has_memories = True
+            except Exception:
+                pass
 
-                # Standard list handling
-                if isinstance(items, list):
-                    for item in items:
-                        if isinstance(item, dict):
-                            mem_text += f"- {item.get('content', '')}\n"
-            system_content += mem_text
+        if has_memories:
+            system_prompt += mem_text
 
-        messages = [{"role": "system", "content": system_content}]
+        # Add Chat Info from Context object directly if available
+        # (Assuming context.chat has info we can use, or it was in RAG)
+        info_text = "\n\n# Информация о чате:\n"
 
-        # Build messages from chat logs (previously "group chat" logic, now universal)
-        # Use the original chat_context passed directly (with image_bytes)
-        # or fall back to parsing from user_input JSON
-        if chat_context is None:
-            input_data = json.loads(user_input)
-            chat_context = input_data.get("chat_context", {})
-        recent_messages = chat_context.get("recent_messages", [])
+        # Start with basic info from context
+        chat_info = {
+            "title": context.chat.title,
+            "type": context.chat.type,
+        }
 
-        # Skip leading assistant messages to ensure first message is from user
-        # (required by some providers like Amazon Nova)
+        # Try to load cached metadata for more fields if available
+        try:
+            cached = self.memory_repo.get_chat_metadata(context.chat.id)
+            if cached:
+                # Update title if missing in context (unlikely but possible)
+                if not chat_info["title"] and cached.get("title"):
+                    chat_info["title"] = cached.get("title")
+
+                # Add extra fields
+                if cached.get("description"):
+                    chat_info["description"] = cached.get("description")
+                if cached.get("invite_link"):
+                    chat_info["invite_link"] = cached.get("invite_link")
+        except Exception:
+            pass
+
+        info_parts = []
+        if chat_info.get("title"):
+            info_parts.append(f"Название: {chat_info['title']}")
+        if chat_info.get("type"):
+            info_parts.append(f"Тип: {chat_info['type']}")
+        if chat_info.get("description"):
+            info_parts.append(f"Описание: {chat_info['description']}")
+        if chat_info.get("invite_link"):
+            info_parts.append(f"Ссылка: {chat_info['invite_link']}")
+
+        if info_parts:
+            system_prompt += info_text + "\n".join(info_parts) + "\n"
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # 2. Build Chat History (Context)
+        # Get history directly from repository helper
+        # We need a message object to get history properly
+        # If message is None, we might not be able to get history for "reply_to" context properly
+        # but basic history comes from repository.
+
+        if message:
+            chat_context = self._build_chat_context_from_logs(context, message)
+            recent_messages = chat_context.get("recent_messages", [])
+        else:
+            # Fallback if no message object (e.g. strict command measurement?)
+            # Usually complete() is called with a message.
+            recent_messages = []
+
+        # Skip leading assistant messages (Amazon Nova fix, kept from original)
         first_user_found = False
         for msg in recent_messages:
             author = msg.get("author", "Unknown")
@@ -829,9 +872,9 @@ class AIService:
             image_bytes = msg.get("image_bytes")
             mime_type = msg.get("mime_type")
 
-            if not text:
+            if not text and not image_bytes:
                 continue
-            elif text.startswith("🔄 Бот перезагружен"):
+            elif text and text.startswith("🔄 Бот перезагружен"):
                 is_bot = True
 
             # Skip assistant messages until we find the first user message
@@ -842,57 +885,41 @@ class AIService:
 
             role = "assistant" if is_bot else "user"
 
-            # Build content - multimodal if there's an image
-            if image_bytes and mime_type:
-                # Multimodal content: text + image
-                content_parts = []
-                if text:
-                    text_content = text if is_bot else f"{author}: {text}"
-                    content_parts.append({"type": "text", "text": text_content})
-
-                # Add image
-                data_url = self._make_data_url(image_bytes, mime_type)
-                content_parts.append({"type": "image_url", "image_url": {"url": data_url}})
-                content = content_parts
-            else:
-                # Text only
-                content = text if is_bot else f"{author}: {text}"
+            # Format content
+            content = self._format_multimodal_message(text, author, is_bot, image_bytes, mime_type)
 
             messages.append({"role": role, "content": content})
-
-        # Build current message content
-        current_msg = input_data.get("current_message", {})
-        current_text = current_msg.get("text", context.prompt)
-
-        # Add reply context if present (universal)
-        chat_context = input_data.get("chat_context", {})
-        reply_to = chat_context.get("reply_to")
-        if reply_to:
-            reply_author = reply_to.get("author", "Unknown")
-            reply_text = reply_to.get("text", "")
-            if reply_text:
-                current_text = f'[Ответ на сообщение от {reply_author}: "{reply_text[:50]}..."]\n{current_text}'
-
-        # Handle images
-        if context.has_image and context.image_bytes:
-            user_content = [
-                {"type": "text", "text": current_text},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": self._make_data_url(context.image_bytes, context.mime_type)
-                    },
-                },
-            ]
-        else:
-            user_content = current_text
-
-        messages.append({"role": "user", "content": user_content})
 
         # Log message structure for debugging
         logger.info(f"Built {len(messages)} messages: {[m['role'] for m in messages]}")
 
         return messages
+
+    def _format_multimodal_message(
+        self,
+        text: str,
+        author: str,
+        is_bot: bool,
+        image_bytes: Optional[bytes] = None,
+        mime_type: Optional[str] = None,
+    ) -> Any:
+        """Format a message for OpenAI API, handling text and images."""
+
+        # Base text format
+        text_content = text if is_bot else f"{author}: {text}"
+
+        if image_bytes and mime_type:
+            # Multimodal content
+            content_parts = []
+            if text:
+                content_parts.append({"type": "text", "text": text_content})
+
+            data_url = self._make_data_url(image_bytes, mime_type)
+            content_parts.append({"type": "image_url", "image_url": {"url": data_url}})
+            return content_parts
+        else:
+            # Text only
+            return text_content
 
     async def _call_openai(self, messages: List[dict], tools: Optional[List[dict]] = None) -> dict:
         """Call OpenAI API."""
@@ -1025,89 +1052,6 @@ class AIService:
 
         # Clear pending reactions
         self._pending_reactions = []
-
-    async def _build_user_input(
-        self, context: MessageContext, message: Optional[types.Message]
-    ) -> Tuple[str, dict]:
-        """Build user input with JSON context.
-
-        Args:
-            context: MessageContext
-            message: Telegram message
-
-        Returns:
-            JSON string with structured context
-        """
-        structured_data = {}
-
-        # Parse RAG context if it's a JSON string (from structured context)
-        if context.rag_context:
-            try:
-                # Try to parse as JSON first
-                import json
-
-                rag_data = json.loads(context.rag_context)
-                structured_data.update(rag_data)
-            except (json.JSONDecodeError, TypeError):
-                # Fallback: treat as plain text
-                structured_data["context_text"] = context.rag_context
-
-        # Add chat context for groups (history is kept as separate messages)
-        # Add chat context for all chats (universally from chat logs)
-        original_chat_context = self._build_chat_context_from_logs(context, message)
-        if original_chat_context:
-            # Create a COPY without image_bytes for JSON serialization
-            # Images are already handled in _build_messages() as data URLs
-            chat_context_for_json = {}
-
-            if "recent_messages" in original_chat_context:
-                cleaned_messages = []
-                for msg in original_chat_context["recent_messages"]:
-                    # Create a copy without image_bytes and mime_type
-                    cleaned_msg = {
-                        "message_id": msg.get("message_id"),
-                        "author": msg.get("author"),
-                        "is_bot": msg.get("is_bot"),
-                        "text": msg.get("text"),
-                        # Don't include image_bytes and mime_type - they're handled separately
-                    }
-                    cleaned_messages.append(cleaned_msg)
-                chat_context_for_json["recent_messages"] = cleaned_messages
-
-            # Clean reply_to as well
-            if "reply_to" in original_chat_context:
-                reply_info = original_chat_context["reply_to"]
-                # Find the replied message in recent_messages by message_id
-                replied_msg_id = reply_info.get("message_id")
-                replied_full_context = None
-
-                if replied_msg_id and "recent_messages" in chat_context_for_json:
-                    for msg in chat_context_for_json["recent_messages"]:
-                        if msg.get("message_id") == replied_msg_id:
-                            replied_full_context = msg
-                            break
-
-                # Build cleaned reply_to with full message context
-                chat_context_for_json["reply_to"] = {
-                    "message_id": replied_msg_id,
-                    "author": reply_info.get("author"),
-                    "text": reply_info.get("text"),
-                    "quote": reply_info.get("quote"),
-                    "full_message": replied_full_context,  # Add full message from logs if found
-                }
-
-            structured_data["chat_context"] = chat_context_for_json
-
-        # Add current message
-        display_name = context.user.get_display_name()
-        structured_data["current_message"] = {
-            "author": display_name,
-            "text": context.prompt,
-        }
-
-        import json
-
-        return json.dumps(structured_data, ensure_ascii=False, indent=2), original_chat_context
 
     def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
         """Create data URL for image."""

@@ -58,17 +58,17 @@ class StringsService:
 
             # Try finding group-specific prompt first
             if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                group_path = self.config.PROMPTS_DIR / f"{chat.id}.txt"
-                if group_path.exists():
-                    raw_prompt_text = self._read_txt_prompt(group_path)
-                    if raw_prompt_text:
-                        logger.debug("Loaded group prompt from %s", group_path)
-
                 default_path = self.config.PROMPTS_DIR / "default.txt"
                 if default_path.exists():
                     raw_prompt_text = self._read_txt_prompt(default_path)
                     if raw_prompt_text:
                         logger.debug("Loaded default prompt from %s", default_path)
+
+                group_path = self.config.PROMPTS_DIR / f"{chat.id}.txt"
+                if group_path.exists():
+                    raw_prompt_text = self._read_txt_prompt(group_path)
+                    if raw_prompt_text:
+                        logger.debug("Loaded group prompt from %s", group_path)
 
             # Final fallback if files are completely missing
             if not raw_prompt_text:
@@ -83,6 +83,8 @@ class StringsService:
                 guessed_obj = guesses_repo.get_guess(chat.id)
                 if guessed_obj:
                     final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}."
+
+            print(final_text)
 
             return final_text
 

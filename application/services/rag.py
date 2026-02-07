@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -298,9 +297,6 @@ class RAGService:
         """
         context = {}
 
-        moscow_tz = timezone(timedelta(hours=3))
-        context["current_date"] = datetime.now(tz=moscow_tz).isoformat()
-
         # Knowledge base via semantic search
         results = await self.search(prompt)
         if results:
@@ -319,6 +315,7 @@ class RAGService:
             if kb_chunks:
                 context["knowledge_base"] = kb_chunks
 
+        # todo: переделать
         # Load memories if chat_id provided
         if chat_id:
             try:
@@ -327,38 +324,6 @@ class RAGService:
 
                 memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
                 chat_logs_repo = ChatLogsRepository(self.config.CHAT_LOGS_FILE)
-
-                # --- Chat Metadata (Logic start) ---
-                chat_metadata = {}
-
-                # 1. Try to fetch from API if bot is available
-                if bot:
-                    try:
-                        chat_full = await bot.get_chat(chat_id)
-                        chat_metadata = {
-                            "title": chat_full.title or chat_full.first_name,
-                            "type": chat_full.type,
-                            "description": getattr(chat_full, "description", None),
-                            "invite_link": getattr(chat_full, "invite_link", None),
-                            "updated_at": datetime.now(timezone.utc).isoformat(),
-                        }
-                        # Add any other useful fields safely
-                        if hasattr(chat_full, "username") and chat_full.username:
-                            chat_metadata["username"] = chat_full.username
-
-                        # Cache the fresh metadata
-                        memory_repo.save_chat_metadata(chat_id, chat_metadata)
-                    except Exception as e:
-                        logger.warning(f"RAG: Failed to fetch chat info for {chat_id}: {e}")
-
-                # 2. If no data from API (or failed), try to load from cache
-                if not chat_metadata:
-                    chat_metadata = memory_repo.get_chat_metadata(chat_id)
-
-                # 3. Add to context if we have anything
-                if chat_metadata:
-                    context["chat_info"] = chat_metadata
-                # --- Chat Metadata (Logic end) ---
 
                 memory_context = {}
 
