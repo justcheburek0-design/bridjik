@@ -166,7 +166,11 @@ class AIService:
                 # Check for tool calls
                 if response_message.tool_calls:
                     # Add assistant message with tool calls to history
-                    messages.append(response_message)
+                    # Convert to dict to ensure compatibility with providers like xAI
+                    response_dict = response_message.model_dump()
+                    if response_dict.get("content") is None:
+                        response_dict["content"] = ""
+                    messages.append(response_dict)
 
                     # Update status if AI provided content
                     if response_message.content and on_tool_update:
@@ -183,7 +187,7 @@ class AIService:
                             func_args = tool_call.function.arguments
                             self.chat_logs_repo.add_message(
                                 context.chat.id,
-                                "Ассистент",
+                                "Инструмент",
                                 True,
                                 f"🔨 Вызов инструмента: {func_name}({func_args})",
                             )
@@ -199,7 +203,7 @@ class AIService:
                             tool_name = tool_result.get("name", "unknown")
                             self.chat_logs_repo.add_message(
                                 context.chat.id,
-                                "Ассистент",
+                                "Инструмент",
                                 True,
                                 f"🔧 Результат {tool_name}: {content}",
                             )
@@ -814,7 +818,6 @@ class AIService:
                 logger.warning(f"Failed to load memories in AIService: {e}")
 
         if has_memories:
-            print(mem_text)
             system_prompt += mem_text
 
         # Add Chat Info from Context object directly if available
