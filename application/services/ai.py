@@ -167,8 +167,13 @@ class AIService:
                 if response_message.tool_calls:
                     # Add assistant message with tool calls to history
                     # Convert to dict to ensure compatibility with providers like xAI
-                    response_dict = response_message.model_dump()
-                    if response_dict.get("content") is None:
+                    # exclude_none=True removes fields like 'audio', 'refusal' etc. which might confuse the API
+                    response_dict = response_message.model_dump(exclude_none=True)
+
+                    # Remove 'reasoning_details' (specific to xAI output, not valid input)
+                    response_dict.pop("reasoning_details", None)
+
+                    if "content" not in response_dict or response_dict["content"] is None:
                         response_dict["content"] = ""
                     messages.append(response_dict)
 
@@ -187,9 +192,9 @@ class AIService:
                             func_args = tool_call.function.arguments
                             self.chat_logs_repo.add_message(
                                 context.chat.id,
-                                "Инструмент",
+                                "Ассистент",
                                 True,
-                                f"🔨 Вызов инструмента: {func_name}({func_args})",
+                                f"🔨 Вызов инструмента: {func_name} ({func_args})",
                             )
                         except Exception:
                             logger.warning("Failed to save tool call to logs", exc_info=True)
@@ -203,7 +208,7 @@ class AIService:
                             tool_name = tool_result.get("name", "unknown")
                             self.chat_logs_repo.add_message(
                                 context.chat.id,
-                                "Инструмент",
+                                "Ассистент",
                                 True,
                                 f"🔧 Результат {tool_name}: {content}",
                             )
@@ -364,7 +369,6 @@ class AIService:
                             content = f"Ошибка при добавлении стикера: {str(e)}"
                     else:
                         content = f"Не удалось найти стикер с message_id={msg_id}. Убедитесь, что это сообщение со стикером."
-
             elif name == "rename_sticker":
                 old_name = args.get("old_name", "").strip()
                 new_name = args.get("new_name", "").strip()
@@ -422,7 +426,6 @@ class AIService:
                         except Exception as e:
                             logger.exception("Failed to rename sticker")
                             content = f"Ошибка при переименовании стикера: {str(e)}"
-
             elif name == "set_guess":
                 obj = args.get("object", "").strip()
 
@@ -446,7 +449,6 @@ class AIService:
                     except Exception as e:
                         logger.exception("Failed to set guess")
                         content = f"Ошибка при сохранении загадки: {str(e)}"
-
             elif name == "clear_guess":
                 if not self._current_message:
                     content = "Error: Available only in message context"
@@ -935,6 +937,19 @@ class AIService:
 
     async def _call_openai(self, messages: List[dict], tools: Optional[List[dict]] = None) -> dict:
         """Call OpenAI API."""
+        # Debug logging for xAI 422 error
+        import json
+
+        try:
+            logger.warn(f"Sending request to OpenAI with {len(messages)} messages")
+            # Log the last 3 messages to avoid clutter, but fully
+            last_msgs = messages[-3:] if len(messages) > 3 else messages
+            logger.warn(
+                f"Last messages payload: {json.dumps(last_msgs, default=str, ensure_ascii=False)}"
+            )
+        except Exception:
+            pass
+
         kwargs = {
             "model": self.model,
             "messages": messages,
