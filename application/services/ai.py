@@ -147,7 +147,6 @@ class AIService:
         self._memory_updates = []
 
         messages = self._build_messages(full_system_prompt, context, message)
-        print(messages)
         tools = self._get_tools()
 
         try:

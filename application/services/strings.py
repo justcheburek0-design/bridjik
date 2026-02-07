@@ -84,8 +84,6 @@ class StringsService:
                 if guessed_obj:
                     final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}."
 
-            print(final_text)
-
             return final_text
 
         except Exception:
