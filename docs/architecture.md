@@ -50,22 +50,6 @@ MineBridge построен на принципах **Clean Architecture** (Чи
 - ✅ Чистые Python классы (dataclasses)
 - ✅ Бизнес-правила в методах сущностей
 
-**Пример**:
-
-```python
-@dataclass
-class User:
-    """Сущность пользователя."""
-    id: int
-    username: Optional[str] = None
-    first_name: Optional[str] = None
-    psevdo: Optional[str] = None
-
-    def get_display_name(self) -> str:
-        """Получить лучшее отображаемое имя."""
-        return self.psevdo or self.first_name or self.username or "Пользователь"
-```
-
 ---
 
 ### 2. Application (Приложение) 🔧

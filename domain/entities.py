@@ -20,14 +20,6 @@ class User:
     first_name: Optional[str] = None
     is_bot: bool = False
 
-    def get_display_name(self) -> str:
-        """Get best display name for the user."""
-        if self.first_name:
-            return self.first_name
-        if self.username:
-            return self.username
-        return "Пользователь"
-
 
 @dataclass
 class Chat:

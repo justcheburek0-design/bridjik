@@ -773,38 +773,48 @@ class AIService:
                 system_prompt += f"\n\n# Контекст:\n{context.rag_context}"
 
         # Add Chat/User Memories
-        # todo: переделать
         mem_text = "\n\n# Память:\n"
         has_memories = False
 
-        if context.rag_context:
+        if context.chat.id:
             try:
-                rag_data = json.loads(context.rag_context)
-                if "memories" in rag_data:
-                    for category, items in rag_data["memories"].items():
-                        if not items:
-                            continue
+                # 1. Load chat memories (always include)
+                chat_memories = self.memory_repo.get_chat_memories(context.chat.id)
+                if chat_memories:
+                    # Sort by timestamp (newest first)
+                    sorted_memories = sorted(
+                        chat_memories, key=lambda m: m.get("timestamp", ""), reverse=True
+                    )
 
-                        # Special handling for users dictionary
-                        if category == "users" and isinstance(items, dict):
-                            for uid, user_mems in items.items():
-                                if isinstance(user_mems, list):
-                                    for item in user_mems:
-                                        if isinstance(item, dict):
-                                            mem_text += f"- {item.get('content', '')}\n"
-                                            has_memories = True
-                            continue
+                    mem_text += "## Память чата:\n"
+                    for m in sorted_memories:
+                        content = m.get("content", "").strip()
+                        if content:
+                            mem_text += f"- {content}\n"
+                            has_memories = True
 
-                        # Standard list handling
-                        if isinstance(items, list):
-                            for item in items:
-                                if isinstance(item, dict):
-                                    mem_text += f"- {item.get('content', '')}\n"
-                                    has_memories = True
-            except Exception:
-                pass
+                # 2. Load user memories if user is present
+                if context.user and context.user.id:
+                    user_memories = self.memory_repo.get_user_memories(context.user.id)
+                    if user_memories:
+                        # Sort by timestamp (newest first)
+                        sorted_user_memories = sorted(
+                            user_memories, key=lambda m: m.get("timestamp", ""), reverse=True
+                        )
+
+                        user_name = context.user.username or context.user.first_name
+                        mem_text += f"\n## Память о пользователе {user_name}:\n"
+                        for m in sorted_user_memories:
+                            content = m.get("content", "").strip()
+                            if content:
+                                mem_text += f"- {content}\n"
+                                has_memories = True
+
+            except Exception as e:
+                logger.warning(f"Failed to load memories in AIService: {e}")
 
         if has_memories:
+            print(mem_text)
             system_prompt += mem_text
 
         # Add Chat Info from Context object directly if available

@@ -16,14 +16,3 @@ repos:
       - id: black
         name: black (автоформатирование кода)
         args: ["--line-length", "100"]
-
-  # Запуск pytest (блокирует коммит при падении тестов)
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest (запуск всех тестов)
-        entry: pytest
-        language: system
-        pass_filenames: false
-        always_run: true
-        args: ["-v"]

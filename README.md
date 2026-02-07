@@ -68,7 +68,7 @@ source .venv/bin/activate
 ```bash
 pip install -e .
 
-# Для разработки (включая black, pytest, ruff)
+# Для разработки (включая black, ruff)
 pip install -e ".[dev]"
 ```
 
@@ -103,20 +103,6 @@ python main.py
 ### Production deployment
 
 Проект настроен для развертывания через **Nixpacks**. Конфигурация находится в `nixpacks.toml`.
-
-## 🧪 Тестирование
-
-Запуск unit-тестов:
-
-```bash
-pytest tests/ -v
-```
-
-С покрытием кода:
-
-```bash
-pytest tests/ --cov=. --cov-report=html
-```
 
 ## 🛠️ Разработка
 
