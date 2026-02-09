@@ -27,12 +27,16 @@ def combine_text_and_media(text: str, media_desc: str) -> str:
     Examples:
         >>> combine_text_and_media("Привет", "🖼️ Фото")
         "🖼️ Фото\\n\\nПривет"
-        >>> combine_text_and_media("", "🎤 Голосовое сообщение (15с)")
-        "🎤 Голосовое сообщение (15с)"
+        >>> combine_text_and_media("распознанный текст", "🎤 Голосовое сообщение (15с)")
+        "🎤 Голосовое сообщение (15с): распознанный текст"
         >>> combine_text_and_media("Текст", "")
         "Текст"
     """
     if text and media_desc:
+        # Для голосовых используем разделитель ':'
+        if media_desc.startswith("🎤 Голосовое сообщение"):
+            return f"{media_desc}: {text}"
+        # Для остальных медиа используем '\n\n'
         return f"{media_desc}\\n\\n{text}"
     elif media_desc:
         return media_desc

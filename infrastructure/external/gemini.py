@@ -64,7 +64,7 @@ class GeminiAPI:
             if not text or text == prompt:
                 return None
 
-            return f"Голосовое сообщение: {text}"
+            return text
         except Exception:
             logger.exception("Gemini ASR failed")
             return None

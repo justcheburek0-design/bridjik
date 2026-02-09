@@ -155,12 +155,12 @@ async def auto_reply(
             dto.image_bytes = image_bytes
             dto.mime_type = mime_type
 
-    # Voice handling
-    if dto.has_voice and should_respond:
-        # Transcribe
-        await media_service.send_typing_action(message.chat.id)
-        if not status_msg:
-            status_msg = await message.reply(STATUS_VOICE)
+    # Voice handling - распознаём ВСЕГДА, даже если не отвечаем
+    if dto.has_voice:
+        if should_respond:
+            await media_service.send_typing_action(message.chat.id)
+            if not status_msg:
+                status_msg = await message.reply(STATUS_VOICE)
 
         voice_data = await media_service.download_voice(message)
         if voice_data:
@@ -168,6 +168,9 @@ async def auto_reply(
             transcribed = await gemini_api.transcribe_voice(v_bytes, v_mime)
             if transcribed:
                 dto.text = transcribed  # Update DTO with transcribed text
+            else:
+                # Если не распознано
+                dto.text = "[не распознано]"
 
     # 4. If shouldn't respond -> Save to logs and exit
     if not should_respond:
