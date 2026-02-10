@@ -2,11 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from application.services.rag import RAGService
-
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -40,52 +36,52 @@ class MessageContext:
     has_image: bool = False
     image_bytes: Optional[bytes] = None
     mime_type: Optional[str] = None
-    rag_context: str = ""
+    # rag_context: str = ""  # RAG disabled
 
-    @classmethod
-    async def create_with_rag(
-        cls,
-        prompt: str,
-        user: "User",
-        chat: "Chat",
-        rag_service: "RAGService",
-        has_image: bool = False,
-        image_bytes: Optional[bytes] = None,
-        mime_type: Optional[str] = None,
-        bot=None,
-    ) -> "MessageContext":
-        """Create MessageContext with structured RAG context (JSON format).
-
-        Args:
-            prompt: The user's message/prompt
-            user: User entity
-            chat: Chat entity
-            rag_service: RAGService instance to build context
-            has_image: Whether message contains image
-            image_bytes: Image data if present
-            mime_type: MIME type of image
-            bot: Aiogram Bot instance for fetching metadata (optional)
-
-        Returns:
-            MessageContext with rag_context as JSON string
-        """
-        rag_context = ""
-        try:
-            import json
-
-            structured_context = await rag_service.build_structured_context(
-                prompt, user.id, chat.id, bot=bot
-            )
-            rag_context = json.dumps(structured_context, ensure_ascii=False)
-        except Exception:
-            logger.exception("RAG: failed to build structured context")
-
-        return cls(
-            prompt=prompt,
-            user=user,
-            chat=chat,
-            has_image=has_image,
-            image_bytes=image_bytes,
-            mime_type=mime_type,
-            rag_context=rag_context,
-        )
+    # @classmethod  # RAG disabled - uncomment to enable
+    # async def create_with_rag(
+    #     cls,
+    #     prompt: str,
+    #     user: "User",
+    #     chat: "Chat",
+    #     rag_service: "RAGService",
+    #     has_image: bool = False,
+    #     image_bytes: Optional[bytes] = None,
+    #     mime_type: Optional[str] = None,
+    #     bot=None,
+    # ) -> "MessageContext":
+    #     """Create MessageContext with structured RAG context (JSON format).
+    #
+    #     Args:
+    #         prompt: The user's message/prompt
+    #         user: User entity
+    #         chat: Chat entity
+    #         rag_service: RAGService instance to build context
+    #         has_image: Whether message contains image
+    #         image_bytes: Image data if present
+    #         mime_type: MIME type of image
+    #         bot: Aiogram Bot instance for fetching metadata (optional)
+    #
+    #     Returns:
+    #         MessageContext with rag_context as JSON string
+    #     """
+    #     rag_context = ""
+    #     try:
+    #         import json
+    #
+    #         structured_context = await rag_service.build_structured_context(
+    #             prompt, user.id, chat.id, bot=bot
+    #         )
+    #         rag_context = json.dumps(structured_context, ensure_ascii=False)
+    #     except Exception:
+    #         logger.exception("RAG: failed to build structured context")
+    #
+    #     return cls(
+    #         prompt=prompt,
+    #         user=user,
+    #         chat=chat,
+    #         has_image=has_image,
+    #         image_bytes=image_bytes,
+    #         mime_type=mime_type,
+    #         rag_context=rag_context,
+    #     )

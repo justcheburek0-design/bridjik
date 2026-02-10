@@ -68,14 +68,14 @@ async def on_startup(container: Container):
     except Exception:
         logger.exception("Failed to get bot info on startup")
 
-    # Initialize RAG index
-    try:
-        logger.info("Initializing RAG index...")
-        await container.rag_service._ensure_rag_index()
-        chunks = container.rag_service.get_chunks()
-        logger.info(f"RAG index initialized with {len(chunks)} chunks")
-    except Exception:
-        logger.exception("RAG: failed to ensure index on startup")
+    # # Initialize RAG index (DISABLED - uncomment to enable)
+    # try:
+    #     logger.info("Initializing RAG index...")
+    #     await container.rag_service._ensure_rag_index()
+    #     chunks = container.rag_service.get_chunks()
+    #     logger.info(f"RAG index initialized with {len(chunks)} chunks")
+    # except Exception:
+    #     logger.exception("RAG: failed to ensure index on startup")
 
 
 async def on_shutdown(container: Container):

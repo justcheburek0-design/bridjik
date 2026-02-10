@@ -7,7 +7,8 @@ from aiogram import Router, types
 
 from application.services.ai import AIService
 from application.services.media import MediaService
-from application.services.rag import RAGService
+
+# from application.services.rag import RAGService  # RAG disabled
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from domain.dtos import IncomingMessageDTO
@@ -96,7 +97,7 @@ async def auto_reply(
     subscription_service: SubscriptionService,
     ai_service: AIService,
     media_service: MediaService,
-    rag_service: RAGService,
+    # rag_service: RAGService,  # RAG disabled
     strings_service: StringsService,
     gemini_api: GeminiAPI,
     freezes_repo: IFreezesRepository,
@@ -211,16 +212,24 @@ async def auto_reply(
             message.chat, guesses_repo=guesses_repo
         )
 
-        # Create Context
-        context = await MessageContext.create_with_rag(
+        # Create Context (RAG disabled - using simple context)
+        # context = await MessageContext.create_with_rag(
+        #     prompt=dto.text,
+        #     user=user,
+        #     chat=chat,
+        #     rag_service=rag_service,
+        #     has_image=bool(image_bytes),
+        #     image_bytes=image_bytes,
+        #     mime_type=mime_type,
+        #     bot=message.bot,
+        # )
+        context = MessageContext(
             prompt=dto.text,
             user=user,
             chat=chat,
-            rag_service=rag_service,
             has_image=bool(image_bytes),
             image_bytes=image_bytes,
             mime_type=mime_type,
-            bot=message.bot,
         )
 
         # Save Incoming to logs

@@ -5,7 +5,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import (  # Tuple  # RAG disabled (used only in find_similar_memories)
+    Dict,
+    List,
+    Optional,
+)
 
 from domain.interfaces import IMemoryRepository
 
@@ -287,62 +291,62 @@ class MemoryRepository(IMemoryRepository):
 
         return memory_to_delete
 
-    async def find_similar_memories(
-        self,
-        scope: str,
-        scope_id: int,
-        content: str,
-        rag_service,
-        limit: int = 3,
-        similarity_threshold: float = 0.7,
-    ) -> List[Tuple[dict, float]]:
-        """Find similar memories using semantic search via RAG."""
-        if scope not in ["chat", "user"]:
-            return []
-
-        if scope == "chat":
-            if scope_id not in self._memories["chats"]:
-                return []
-            memories = self._memories["chats"][scope_id]["memories"]
-        else:
-            if scope_id not in self._memories["users"]:
-                return []
-            memories = self._memories["users"][scope_id]
-
-        if not memories:
-            return []
-
-        try:
-            import numpy as np
-
-            # Get all memories for this scope
-            all_texts = [content] + [m["content"] for m in memories]
-            embeddings = await rag_service._embed_batch(all_texts)
-
-            if not embeddings or len(embeddings) != len(all_texts):
-                return []
-
-            query_emb = np.array(embeddings[0], dtype="float32")
-            query_emb /= max(np.linalg.norm(query_emb), 1e-12)
-
-            memory_embs = np.array(embeddings[1:], dtype="float32")
-            norms = np.linalg.norm(memory_embs, axis=1, keepdims=True)
-            norms = np.maximum(norms, 1e-12)
-            memory_embs /= norms
-
-            similarities = memory_embs @ query_emb
-
-            results = []
-            for idx, sim in enumerate(similarities):
-                if sim >= similarity_threshold:
-                    results.append((memories[idx], float(sim)))
-
-            results.sort(key=lambda x: x[1], reverse=True)
-            return results[:limit]
-
-        except Exception as e:
-            logger.exception(f"Failed to find similar memories: {e}")
-            return []
+    # async def find_similar_memories(  # RAG disabled - uncomment to enable
+    #     self,
+    #     scope: str,
+    #     scope_id: int,
+    #     content: str,
+    #     rag_service,
+    #     limit: int = 3,
+    #     similarity_threshold: float = 0.7,
+    # ) -> List[Tuple[dict, float]]:
+    #     """Find similar memories using semantic search via RAG."""
+    #     if scope not in ["chat", "user"]:
+    #         return []
+    #
+    #     if scope == "chat":
+    #         if scope_id not in self._memories["chats"]:
+    #             return []
+    #         memories = self._memories["chats"][scope_id]["memories"]
+    #     else:
+    #         if scope_id not in self._memories["users"]:
+    #             return []
+    #         memories = self._memories["users"][scope_id]
+    #
+    #     if not memories:
+    #         return []
+    #
+    #     try:
+    #         import numpy as np
+    #
+    #         # Get all memories for this scope
+    #         all_texts = [content] + [m["content"] for m in memories]
+    #         embeddings = await rag_service._embed_batch(all_texts)
+    #
+    #         if not embeddings or len(embeddings) != len(all_texts):
+    #             return []
+    #
+    #         query_emb = np.array(embeddings[0], dtype="float32")
+    #         query_emb /= max(np.linalg.norm(query_emb), 1e-12)
+    #
+    #         memory_embs = np.array(embeddings[1:], dtype="float32")
+    #         norms = np.linalg.norm(memory_embs, axis=1, keepdims=True)
+    #         norms = np.maximum(norms, 1e-12)
+    #         memory_embs /= norms
+    #
+    #         similarities = memory_embs @ query_emb
+    #
+    #         results = []
+    #         for idx, sim in enumerate(similarities):
+    #             if sim >= similarity_threshold:
+    #                 results.append((memories[idx], float(sim)))
+    #
+    #         results.sort(key=lambda x: x[1], reverse=True)
+    #         return results[:limit]
+    #
+    #     except Exception as e:
+    #         logger.exception(f"Failed to find similar memories: {e}")
+    #         return []
 
     def restore_from_json(self, json_content: str) -> bool:
         """Restore memories from JSON string. Returns True on success."""

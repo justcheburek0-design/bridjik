@@ -757,26 +757,26 @@ class AIService:
         date = datetime.now(tz=moscow_tz).isoformat()
         system_prompt += f"\n\nТекущая дата: {date}"
 
-        # Add RAG Knowledge Base
-        if context.rag_context:
-            try:
-                # Try to parse RAG context as JSON
-                rag_data = json.loads(context.rag_context)
-
-                if "knowledge_base" in rag_data:
-                    kb_text = "\n\n# База знаний:\n"
-                    for item in rag_data["knowledge_base"]:
-                        kb_text += f"\n{item['content']}\n"
-                    system_prompt += kb_text
-
-                # Add Chat Info if present in RAG data (unlikely but possible)
-                if "chat_info" in rag_data:
-                    # ... logic from previous _build_user_input
-                    pass
-
-            except (json.JSONDecodeError, TypeError):
-                # Fallback if RAG context is just text
-                system_prompt += f"\n\n# Контекст:\n{context.rag_context}"
+        # # Add RAG Knowledge Base
+        # if context.rag_context:
+        #     try:
+        #         # Try to parse RAG context as JSON
+        #         rag_data = json.loads(context.rag_context)
+        #
+        #         if "knowledge_base" in rag_data:
+        #             kb_text = "\n\n# База знаний:\n"
+        #             for item in rag_data["knowledge_base"]:
+        #                 kb_text += f"\n{item['content']}\n"
+        #             system_prompt += kb_text
+        #
+        #         # Add Chat Info if present in RAG data (unlikely but possible)
+        #         if "chat_info" in rag_data:
+        #             # ... logic from previous _build_user_input
+        #             pass
+        #
+        #     except (json.JSONDecodeError, TypeError):
+        #         # Fallback if RAG context is just text
+        #         system_prompt += f"\n\n# Контекст:\n{context.rag_context}"
 
         # Add Chat/User Memories
         mem_text = "\n\n# Память:\n"

@@ -7,7 +7,8 @@ from aiogram import Router, types
 from application.services.ai import AIService
 from application.services.game import GameService
 from application.services.media import MediaService
-from application.services.rag import RAGService
+
+# from application.services.rag import RAGService  # RAG disabled
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from domain.interfaces import IChatLogsRepository, IFreezesRepository
@@ -29,7 +30,7 @@ async def callback_any(
     game_service: GameService,
     ai_service: AIService,
     media_service: MediaService,
-    rag_service: RAGService,
+    # rag_service: RAGService,  # RAG disabled
     strings_service: StringsService,
     gemini_api: GeminiAPI,
     freezes_repo: IFreezesRepository,

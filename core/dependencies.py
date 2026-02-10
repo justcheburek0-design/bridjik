@@ -3,7 +3,8 @@
 from application.services.ai import AIService
 from application.services.game import GameService
 from application.services.media import MediaService
-from application.services.rag import RAGService
+
+# from application.services.rag import RAGService  # RAG disabled
 from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from core.config import Config
@@ -60,7 +61,8 @@ class Container:
         # Services
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
         self.game_service = GameService(self.guesses_repo)
-        self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)
+        # self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)  # RAG disabled
+        self.rag_service = None  # Placeholder for disabled RAG
         self.ai_service = AIService(
             self.openai_client,
             self.history_repo,
@@ -100,7 +102,7 @@ class Container:
             "game_service": self.game_service,
             "ai_service": self.ai_service,
             "media_service": self.media_service,
-            "rag_service": self.rag_service,
+            # "rag_service": self.rag_service,  # RAG disabled
             "strings_service": self.strings_service,
             "mc_api": self.mc_api,
             "mb_api": self.mb_api,

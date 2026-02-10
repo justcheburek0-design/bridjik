@@ -14,7 +14,7 @@ authors = [
 dependencies = [
   "aiogram==3.22.0",
   "httpx==0.28.1",
-  "numpy==1.26.4",
+  # "numpy==1.26.4",  # RAG disabled - uncomment to enable
   "openai==1.108.2",
   "python-dotenv==1.1.1",
   "nextcord==2.6.0",

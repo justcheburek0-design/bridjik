@@ -201,27 +201,27 @@ class IMemoryRepository(ABC):
         """
         pass
 
-    @abstractmethod
-    async def find_similar_memories(
-        self,
-        scope: str,
-        scope_id: int,
-        content: str,
-        rag_service,
-        limit: int = 3,
-        similarity_threshold: float = 0.7,
-    ) -> List[Tuple[dict, float]]:
-        """Find similar memories using semantic search.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            content: Content to search for similar memories
-            rag_service: RAG service instance for embeddings
-            limit: Maximum number of similar memories to return
-            similarity_threshold: Minimum similarity score (0.0-1.0)
-        """
-        pass
+    # @abstractmethod  # RAG disabled - uncomment to enable
+    # async def find_similar_memories(
+    #     self,
+    #     scope: str,
+    #     scope_id: int,
+    #     content: str,
+    #     rag_service,
+    #     limit: int = 3,
+    #     similarity_threshold: float = 0.7,
+    # ) -> List[Tuple[dict, float]]:
+    #     """Find similar memories using semantic search.
+    #
+    #     Args:
+    #         scope: "chat" or "user"
+    #         scope_id: chat_id or user_id
+    #         content: Content to search for similar memories
+    #         rag_service: RAG service instance for embeddings
+    #         limit: Maximum number of similar memories to return
+    #         similarity_threshold: Minimum similarity score (0.0-1.0)
+    #     """
+    #     pass
 
 
 class IFreezesRepository(ABC):
