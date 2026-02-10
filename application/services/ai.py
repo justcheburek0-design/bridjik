@@ -63,6 +63,7 @@ class AIService:
         stickers_repo,
         memory_repo,
         rag_service,
+        telemetry_repo,
     ):
         self.client = openai_client
         self.history_repo = history_repo
@@ -76,10 +77,14 @@ class AIService:
         self.stickers_repo = stickers_repo
         self.memory_repo = memory_repo
         self.rag_service = rag_service
+        self.telemetry_repo = telemetry_repo
         # Track memory updates for displaying to user
         self._memory_updates = []
         # Track reactions parsed from AI response
         self._pending_reactions: List[Tuple[str, str]] = []
+        # Track current request for telemetry
+        self._current_request_start_time = 0
+        self._current_request_tool_calls = []
 
     async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
         """Check if bot should respond to the message."""
@@ -144,6 +149,16 @@ class AIService:
         self._current_message = message
         # Reset memory updates tracker
         self._memory_updates = []
+        # Reset telemetry tracking
+        self._current_request_tool_calls = []
+
+        # Telemetry: track time and usage
+        import time
+
+        overall_start_time = time.time()
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cached_tokens = 0
 
         messages = self._build_messages(full_system_prompt, context, message)
         tools = self._get_tools()
@@ -153,6 +168,16 @@ class AIService:
             for _ in range(10):
                 response = await self._call_openai(messages, tools)
                 response_message = response.choices[0].message
+
+                # Accumulate usage for telemetry
+                if hasattr(response, "usage") and response.usage:
+                    total_input_tokens += response.usage.prompt_tokens or 0
+                    total_output_tokens += response.usage.completion_tokens or 0
+                    # Extract cached tokens if available
+                    if hasattr(response.usage, "prompt_tokens_details"):
+                        prompt_details = response.usage.prompt_tokens_details
+                        if prompt_details and hasattr(prompt_details, "cached_tokens"):
+                            total_cached_tokens += prompt_details.cached_tokens or 0
 
                 # Check for tool calls
                 # Update status if AI provided content
@@ -164,6 +189,10 @@ class AIService:
 
                 # Check for tool calls
                 if response_message.tool_calls:
+                    # Track tool names for telemetry
+                    for tc in response_message.tool_calls:
+                        self._current_request_tool_calls.append(tc.function.name)
+
                     # Add assistant message with tool calls to history
                     # Convert to dict to ensure compatibility with providers like xAI
                     # exclude_none=True removes fields like 'audio', 'refusal' etc. which might confuse the API
@@ -222,13 +251,72 @@ class AIService:
                 # No tool calls, process final response
                 text = self._process_response(response)
 
+                # Record telemetry after successful completion
+                latency_ms = int((time.time() - overall_start_time) * 1000)
+                try:
+                    if context.user and context.user.id:
+                        self.telemetry_repo.record_request(
+                            user_id=context.user.id,
+                            chat_id=context.chat.id,
+                            model=self.model,
+                            tokens_input=total_input_tokens,
+                            tokens_output=total_output_tokens,
+                            tokens_cached=total_cached_tokens,
+                            latency_ms=latency_ms,
+                            tool_calls=self._current_request_tool_calls,
+                        )
+
+                        # Check soft budget limit and add warning if needed
+                        budget_warning = await self._check_user_budget(
+                            context.user.id, context.chat.id
+                        )
+                        if budget_warning:
+                            text += budget_warning
+                except Exception:
+                    logger.exception("Failed to record telemetry")
+
                 return text, self._memory_updates, self._pending_reactions
 
             # If loop limit reached, return what we have or error
+            latency_ms = int((time.time() - overall_start_time) * 1000)
+            try:
+                if context.user and context.user.id:
+                    self.telemetry_repo.record_request(
+                        user_id=context.user.id,
+                        chat_id=context.chat.id,
+                        model=self.model,
+                        tokens_input=total_input_tokens,
+                        tokens_output=total_output_tokens,
+                        tokens_cached=total_cached_tokens,
+                        latency_ms=latency_ms,
+                        tool_calls=self._current_request_tool_calls,
+                        error="Loop limit reached",
+                    )
+            except Exception:
+                logger.exception("Failed to record telemetry")
+
             return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
 
         except (RateLimitError, APIError) as e:
             logger.error("OpenAI completion rate limit/API error: %s", str(e), exc_info=True)
+            # Record error in telemetry
+            latency_ms = int((time.time() - overall_start_time) * 1000)
+            try:
+                if context.user and context.user.id:
+                    self.telemetry_repo.record_request(
+                        user_id=context.user.id,
+                        chat_id=context.chat.id,
+                        model=self.model,
+                        tokens_input=total_input_tokens,
+                        tokens_output=total_output_tokens,
+                        tokens_cached=total_cached_tokens,
+                        latency_ms=latency_ms,
+                        tool_calls=self._current_request_tool_calls,
+                        error=str(e),
+                    )
+            except Exception:
+                logger.exception("Failed to record telemetry")
+
             return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
 
     def _get_tools(self) -> List[dict]:
@@ -1159,3 +1247,32 @@ class AIService:
             "text": text if text and text != "(пусто)" else None,
             "quote": quote,
         }
+
+    async def _check_user_budget(self, user_id: int, chat_id: int) -> Optional[str]:
+        """Check if user is approaching budget limit.
+
+        Args:
+            user_id: Telegram user ID
+            chat_id: Telegram chat ID
+
+        Returns:
+            Warning message if approaching limit, None otherwise
+        """
+        try:
+            tokens_used = self.telemetry_repo.get_user_tokens_in_window(
+                user_id, hours=self.config.TELEMETRY_WINDOW_HOURS
+            )
+            soft_limit = self.config.TELEMETRY_SOFT_LIMIT_TOKENS
+
+            # Warning at 90% of limit
+            if tokens_used > soft_limit * 0.9:
+                remaining = soft_limit - tokens_used
+                return (
+                    f"\n\n⚠️ <b>Внимание:</b> использовано {tokens_used:,} токенов "
+                    f"за последние {self.config.TELEMETRY_WINDOW_HOURS} часа "
+                    f"(лимит: {soft_limit:,}, осталось: {remaining:,})"
+                )
+            return None
+        except Exception:
+            logger.exception("Failed to check user budget")
+            return None

@@ -20,6 +20,7 @@ from infrastructure.repositories.freezes import FreezesRepository
 from infrastructure.repositories.history import HistoryRepository
 from infrastructure.repositories.memories import MemoryRepository
 from infrastructure.repositories.stickers import StickersRepository
+from infrastructure.repositories.telemetry import TelemetryRepository
 from presentation.formatters import Formatter
 from presentation.keyboards import KeyboardBuilder
 
@@ -48,6 +49,9 @@ class Container:
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
         self.memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
+        self.telemetry_repo = TelemetryRepository(
+            self.config.TELEMETRY_FILE, self.config.PRICING_FILE
+        )
 
         # External APIs
         self.mc_api = MinecraftAPI(self.config.MC_SERVER_HOST, self.config.MC_CACHE_TTL)
@@ -74,6 +78,7 @@ class Container:
             self.stickers_repo,
             self.memory_repo,
             self.rag_service,
+            self.telemetry_repo,
         )
         self.media_service = MediaService(
             self.bot,
@@ -114,4 +119,5 @@ class Container:
             "chat_logs_repo": self.chat_logs_repo,
             "stickers_repo": self.stickers_repo,
             "memory_repo": self.memory_repo,
+            "telemetry_repo": self.telemetry_repo,
         }

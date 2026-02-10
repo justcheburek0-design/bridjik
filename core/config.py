@@ -97,6 +97,12 @@ class Config:
     # Memories
     MEMORIES_FILE: Path = field(init=False)
 
+    # Telemetry
+    TELEMETRY_FILE: Path = field(init=False)
+    PRICING_FILE: Path = field(init=False)
+    TELEMETRY_SOFT_LIMIT_TOKENS: int = 100_000  # 100k tokens per 3 hours
+    TELEMETRY_WINDOW_HOURS: int = 3
+
     def __post_init__(self):
         """Initialize computed paths."""
         # self.KB_DIR = self.BASE_DIR / "kb"  # RAG disabled
@@ -108,6 +114,8 @@ class Config:
         self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
         self.STICKERS_FILE = self.DATA_DIR / "stickers.json"
         self.MEMORIES_FILE = self.DATA_DIR / "memories.json"
+        self.TELEMETRY_FILE = self.DATA_DIR / "telemetry.json"
+        self.PRICING_FILE = self.DATA_DIR / "pricing.json"
         self.VOICES_DIR = self.BASE_DIR / "voices"
         self.TOOLS_FILE = self.BASE_DIR / "application" / "resources" / "tools.json"
 
