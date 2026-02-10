@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
-TEMPERATURE = 0.7
+TEMPERATURE = 1
 
 # Regex patterns for intent detection
 BOT_ADDRESS_RE = re.compile(
@@ -267,9 +267,6 @@ class AIService:
             elif name == "get_server_status":
                 data = await self.mc_api.fetch_status()
                 content = json.dumps(data, ensure_ascii=False)
-            elif name == "get_stickers":
-                stickers = list(self.stickers_repo.get_all_stickers().keys())
-                content = ", ".join(stickers)
             elif name == "get_news":
                 limit = min(args.get("limit", 10), 20)
                 offset = args.get("offset", 0)
@@ -710,10 +707,13 @@ class AIService:
             List of message dictionaries in OpenAI format
         """
         # 1. Build System Message
-        # Add Date
-        moscow_tz = timezone(timedelta(hours=3))
-        date = datetime.now(tz=moscow_tz).isoformat()
-        system_prompt += f"\n\nТекущая дата: {date}"
+        # ОПТИМИЗАЦИЯ ДЛЯ КЕШИРОВАНИЯ: статичный контент в начале, динамичный в конце
+
+        # Add stickers list (static content - будет кешироваться)
+        stickers = list(self.stickers_repo.get_all_stickers().keys())
+        if stickers:
+            stickers_text = ", ".join(sorted(stickers))
+            system_prompt += f"\n\n## Доступные стикеры:\n{stickers_text}"
 
         # # Add RAG Knowledge Base
         # if context.rag_context:
@@ -736,7 +736,45 @@ class AIService:
         #         # Fallback if RAG context is just text
         #         system_prompt += f"\n\n# Контекст:\n{context.rag_context}"
 
-        # Add Chat/User Memories
+        # Add Chat Info (relatively static - будет кешироваться)
+        info_text = "\n\n# Информация о чате:\n"
+
+        # Start with basic info from context
+        chat_info = {
+            "title": context.chat.title,
+            "type": context.chat.type,
+        }
+
+        # Try to load cached metadata for more fields if available
+        try:
+            cached = self.memory_repo.get_chat_metadata(context.chat.id)
+            if cached:
+                # Update title if missing in context (unlikely but possible)
+                if not chat_info["title"] and cached.get("title"):
+                    chat_info["title"] = cached.get("title")
+
+                # Add extra fields
+                if cached.get("description"):
+                    chat_info["description"] = cached.get("description")
+                if cached.get("invite_link"):
+                    chat_info["invite_link"] = cached.get("invite_link")
+        except Exception:
+            pass
+
+        info_parts = []
+        if chat_info.get("title"):
+            info_parts.append(f"Название: {chat_info['title']}")
+        if chat_info.get("type"):
+            info_parts.append(f"Тип: {chat_info['type']}")
+        if chat_info.get("description"):
+            info_parts.append(f"Описание: {chat_info['description']}")
+        if chat_info.get("invite_link"):
+            info_parts.append(f"Ссылка: {chat_info['invite_link']}")
+
+        if info_parts:
+            system_prompt += info_text + "\n".join(info_parts) + "\n"
+
+        # Add Chat/User Memories (dynamic - НЕ будет кешироваться, но после статичных блоков)
         mem_text = "\n\n# Память:\n"
         has_memories = False
 
@@ -780,44 +818,11 @@ class AIService:
         if has_memories:
             system_prompt += mem_text
 
-        # Add Chat Info from Context object directly if available
-        # (Assuming context.chat has info we can use, or it was in RAG)
-        info_text = "\n\n# Информация о чате:\n"
-
-        # Start with basic info from context
-        chat_info = {
-            "title": context.chat.title,
-            "type": context.chat.type,
-        }
-
-        # Try to load cached metadata for more fields if available
-        try:
-            cached = self.memory_repo.get_chat_metadata(context.chat.id)
-            if cached:
-                # Update title if missing in context (unlikely but possible)
-                if not chat_info["title"] and cached.get("title"):
-                    chat_info["title"] = cached.get("title")
-
-                # Add extra fields
-                if cached.get("description"):
-                    chat_info["description"] = cached.get("description")
-                if cached.get("invite_link"):
-                    chat_info["invite_link"] = cached.get("invite_link")
-        except Exception:
-            pass
-
-        info_parts = []
-        if chat_info.get("title"):
-            info_parts.append(f"Название: {chat_info['title']}")
-        if chat_info.get("type"):
-            info_parts.append(f"Тип: {chat_info['type']}")
-        if chat_info.get("description"):
-            info_parts.append(f"Описание: {chat_info['description']}")
-        if chat_info.get("invite_link"):
-            info_parts.append(f"Ссылка: {chat_info['invite_link']}")
-
-        if info_parts:
-            system_prompt += info_text + "\n".join(info_parts) + "\n"
+        # Add Date (САМЫЙ ДИНАМИЧНЫЙ ЭЛЕМЕНТ - в конце для минимизации влияния на кеш)
+        # ОПТИМИЗАЦИЯ: только дата дня без времени для кеширования на протяжении всего дня
+        moscow_tz = timezone(timedelta(hours=3))
+        date = datetime.now(tz=moscow_tz).strftime("%Y-%m-%d")  # Формат: 2026-02-10
+        system_prompt += f"\n\nТекущая дата: {date}"
 
         messages = [{"role": "system", "content": system_prompt}]
 
