@@ -58,7 +58,6 @@ class Config:
     HISTORY_FILE: Path = field(init=False)
     CHAT_LOGS_FILE: Path = field(init=False)
     FREEZES_FILE: Path = field(init=False)
-    GUESSES_FILE: Path = field(init=False)
     TOOLS_FILE: Path = field(init=False)
     VOICES_DIR: Path = field(init=False)
 
@@ -107,7 +106,6 @@ class Config:
         self.HISTORY_FILE = self.DATA_DIR / "chat_logs.json"
         self.CHAT_LOGS_FILE = self.DATA_DIR / "chat_logs.json"
         self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
-        self.GUESSES_FILE = self.DATA_DIR / "guesses.json"
         self.STICKERS_FILE = self.DATA_DIR / "stickers.json"
         self.MEMORIES_FILE = self.DATA_DIR / "memories.json"
         self.VOICES_DIR = self.BASE_DIR / "voices"

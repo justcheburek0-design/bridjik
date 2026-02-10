@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "get_stickers",
-      "description": "Get list of available stickers.",
+      "description": "Получить список доступных стикеров",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -15,18 +15,18 @@
     "type": "function",
     "function": {
       "name": "get_news",
-      "description": "Get latest news from MineBridge news feed",
+      "description": "Получить последние новости MineBridge (макс 20)",
       "parameters": {
         "type": "object",
         "properties": {
           "limit": {
             "type": "integer",
-            "description": "Number of news items to fetch (max: 20)",
+            "description": "Количество новостей (макс 20)",
             "default": 10
           },
           "offset": {
             "type": "integer",
-            "description": "Offset for pagination",
+            "description": "Смещение для пагинации",
             "default": 0
           }
         },
@@ -38,17 +38,17 @@
     "type": "function",
     "function": {
       "name": "web_search",
-      "description": "Search the web for current information, news, or any topic. Use this when you need up-to-date information or facts not in your knowledge base.",
+      "description": "Поиск в интернете для получения актуальной информации",
       "parameters": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
-            "description": "Search query"
+            "description": "Текст поискового запроса"
           },
           "max_results": {
             "type": "integer",
-            "description": "Maximum number of results to return (max: 10)",
+            "description": "Максимум результатов (<=10)",
             "default": 5
           }
         },
@@ -60,17 +60,17 @@
     "type": "function",
     "function": {
       "name": "add_sticker",
-      "description": "Add a new sticker to the database. Analyze the sticker's visual content and generate a brief Russian description (2-4 words) of what is depicted or the emotion conveyed. Use this when user asks to add/save/remember a sticker.",
+      "description": "Добавить стикер и сгенерировать короткое описание на русском (2-4 слова)",
       "parameters": {
         "type": "object",
         "properties": {
           "description": {
             "type": "string",
-            "description": "Brief Russian description of the sticker (2-4 words), e.g. 'грустный кот', 'пепе смеется', 'лайк'"
+            "description": "Краткое описание на русском (2-4 слова), например: 'грустный кот'"
           },
           "message_id": {
             "type": "integer",
-            "description": "Telegram message ID of the sticker to add"
+            "description": "ID сообщения Telegram со стикером"
           }
         },
         "required": ["description", "message_id"]
@@ -81,21 +81,21 @@
     "type": "function",
     "function": {
       "name": "rename_sticker",
-      "description": "Rename an existing sticker in the database. Use this when the user asks to rename or change the name of a sticker.",
+      "description": "Переименовать существующий стикер (по имени или по ID сообщения)",
       "parameters": {
         "type": "object",
         "properties": {
           "old_name": {
             "type": "string",
-            "description": "Current name of the sticker to rename (optional if message_id is provided)"
+            "description": "Текущее имя стикера (не нужен при message_id)"
           },
           "new_name": {
             "type": "string",
-            "description": "New name for the sticker - a brief Russian description (2-4 words)"
+            "description": "Новое краткое имя на русском (2-4 слова)"
           },
           "message_id": {
             "type": "integer",
-            "description": "Telegram message ID of the sticker (optional if old_name is not provided)"
+            "description": "ID сообщения Telegram (не нужен при old_name)"
           }
         },
         "required": ["new_name"]
@@ -105,53 +105,24 @@
   {
     "type": "function",
     "function": {
-      "name": "set_guess",
-      "description": "Set the guessed object for the 'Who am I?' game. Use this ONCE at the start of the game to save what you've chosen. The object will be saved and you'll see it in future messages.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "object": {
-            "type": "string",
-            "description": "The object you've chosen in Russian"
-          }
-        },
-        "required": ["object"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "clear_guess",
-      "description": "Clear the guessed object and end the 'Who am I?' game. Use this when the user has correctly guessed the object or wants to stop the game.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "save_memory",
-      "description": "Save important information to memory.",
+      "description": "Сохранить информацию в память (chat или user) нейтральным тоном",
       "parameters": {
         "type": "object",
         "properties": {
           "scope": {
             "type": "string",
             "enum": ["chat", "user"],
-            "description": "Memory type: 'chat' for local memes/jokes/chat events, 'user' for global personal info"
+            "description": "Тип памяти: 'chat' — локальные мемы/события, 'user' — личная информация"
           },
           "content": {
             "type": "string",
-            "description": "What to remember in NEUTRAL TONE"
+            "description": "Что запомнить (коротко, нейтрально)"
           },
           "tags": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Tags for search (names, keywords, dates)"
+            "description": "Теги для поиска (имена, ключевые слова, даты)"
           }
         },
         "required": ["scope", "content"]
@@ -162,27 +133,27 @@
     "type": "function",
     "function": {
       "name": "update_memory",
-      "description": "Update existing memory record. Use when user wants to edit or correct previously saved information.",
+      "description": "Обновить запись в памяти (поиск и правка существующей записи)",
       "parameters": {
         "type": "object",
         "properties": {
           "search_query": {
             "type": "string",
-            "description": "Search query to find the record to update"
+            "description": "Запрос для поиска записи, которую нужно обновить"
           },
           "scope": {
             "type": "string",
             "enum": ["chat", "user"],
-            "description": "Where to search: 'chat' or 'user' memory (optional, searches in current chat by default)"
+            "description": "Где искать: 'chat' или 'user' (опционально)"
           },
           "content": {
             "type": "string",
-            "description": "New content (optional, leave empty to keep current)"
+            "description": "Новое содержание (опционально, оставить пустым чтобы сохранить текущее)"
           },
           "tags": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "New tags (optional, leave empty to keep current)"
+            "description": "Новые теги (опционально)"
           }
         },
         "required": ["search_query"]
@@ -193,18 +164,18 @@
     "type": "function",
     "function": {
       "name": "delete_memory",
-      "description": "Delete a memory record. Used when information is outdated or user asks to forget something.",
+      "description": "Удалить запись памяти по запросу",
       "parameters": {
         "type": "object",
         "properties": {
           "search_query": {
             "type": "string",
-            "description": "Search query to find the record to delete"
+            "description": "Запрос для поиска записи, которую нужно удалить"
           },
           "scope": {
             "type": "string",
             "enum": ["chat", "user"],
-            "description": "Where to search: 'chat' or 'user' memory (optional, searches in current chat by default)"
+            "description": "Где искать: 'chat' или 'user' (опционально)"
           }
         },
         "required": ["search_query"]

@@ -42,11 +42,11 @@ class StringsService:
             logger.exception("Failed to read prompt from %s", path)
             return ""
 
-    def load_system_prompt_for_chat(self, chat: types.Chat, guesses_repo=None) -> str:
+    def load_system_prompt_for_chat(self, chat: types.Chat) -> str:
         """Load chat-specific system prompt text, falling back to default."""
         try:
             # 1. Load the template
-            template_path = self.config.PROMPTS_DIR / "template.txt"
+            template_path = self.config.PROMPTS_DIR / "template.md"
             template_text = "{prompt}"  # Default fallback if template is missing
             if template_path.exists():
                 loaded_template = self._read_txt_prompt(template_path)
@@ -58,7 +58,7 @@ class StringsService:
 
             # Try finding group-specific prompt first
             if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                default_path = self.config.PROMPTS_DIR / "default.txt"
+                default_path = self.config.PROMPTS_DIR / "default.md"
                 if default_path.exists():
                     raw_prompt_text = self._read_txt_prompt(default_path)
                     if raw_prompt_text:
@@ -77,12 +77,6 @@ class StringsService:
 
             # 3. Apply template
             final_text = template_text.replace("{prompt}", raw_prompt_text)
-
-            # 4. Check if game is active and add to prompt
-            if guesses_repo:
-                guessed_obj = guesses_repo.get_guess(chat.id)
-                if guessed_obj:
-                    final_text += f"\n\n# Текущая игра 'Кто я?'\nТы загадал(а) для пользователя: {guessed_obj}."
 
             return final_text
 

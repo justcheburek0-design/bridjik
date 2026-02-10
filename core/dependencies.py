@@ -17,7 +17,6 @@ from infrastructure.external.tavily_api import TavilyAPI
 from infrastructure.openai_client import create_openai_client
 from infrastructure.repositories.chat_logs import ChatLogsRepository
 from infrastructure.repositories.freezes import FreezesRepository
-from infrastructure.repositories.guesses import GuessesRepository
 from infrastructure.repositories.history import HistoryRepository
 from infrastructure.repositories.memories import MemoryRepository
 from infrastructure.repositories.stickers import StickersRepository
@@ -47,7 +46,6 @@ class Container:
             self.config.CHAT_LOGS_FILE, self.config.GROUP_MAX_MESSAGES
         )
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
-        self.guesses_repo = GuessesRepository(self.config.GUESSES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
         self.memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
 
@@ -60,7 +58,7 @@ class Container:
 
         # Services
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
-        self.game_service = GameService(self.guesses_repo)
+        self.game_service = GameService(self.memory_repo)
         # self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)  # RAG disabled
         self.rag_service = None  # Placeholder for disabled RAG
         self.ai_service = AIService(
@@ -82,7 +80,7 @@ class Container:
             self.config.BOT_TOKEN,
             self.config,
             self.stickers_repo,
-            self.guesses_repo,
+            self.memory_repo,
             self.openai_client,
         )
         self.strings_service = StringsService(self.config)
@@ -115,6 +113,5 @@ class Container:
             "history_repo": self.history_repo,
             "chat_logs_repo": self.chat_logs_repo,
             "stickers_repo": self.stickers_repo,
-            "guesses_repo": self.guesses_repo,
             "memory_repo": self.memory_repo,
         }

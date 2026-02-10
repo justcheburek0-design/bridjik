@@ -18,7 +18,6 @@ from aiogram.types import BufferedInputFile, FSInputFile
 from PIL import Image
 
 from core.config import Config
-from domain.interfaces import IGuessesRepository
 from infrastructure.repositories.stickers import StickersRepository
 from utils.markdown_to_html import markdown_to_telegram_html
 
@@ -51,14 +50,14 @@ class MediaService:
         bot_token: str,
         config: Config,
         stickers_repo: StickersRepository,
-        guesses_repo: Optional[IGuessesRepository] = None,
+        memory_repo=None,
         openai_client=None,
     ):
         self.bot = bot
         self.bot_token = bot_token
         self.config = config
         self.stickers_repo = stickers_repo
-        self.guesses_repo = guesses_repo
+        self.memory_repo = memory_repo
         self.openai_client = openai_client
 
     async def download_image(self, message: types.Message) -> Optional[tuple[bytes, str]]:

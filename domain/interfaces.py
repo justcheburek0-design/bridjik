@@ -246,22 +246,3 @@ class IFreezesRepository(ABC):
     def is_frozen(self, user_id: int) -> bool:
         """Check if user is frozen."""
         pass
-
-
-class IGuessesRepository(ABC):
-    """Interface for guessing game repository."""
-
-    @abstractmethod
-    def set_guess(self, chat_id: int, obj: str) -> None:
-        """Set guessed object for chat."""
-        pass
-
-    @abstractmethod
-    def get_guess(self, chat_id: int) -> Optional[str]:
-        """Get guessed object for chat."""
-        pass
-
-    @abstractmethod
-    def clear_guess(self, chat_id: int) -> None:
-        """Clear guessed object for chat."""
-        pass
