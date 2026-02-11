@@ -212,7 +212,8 @@ class AIService:
                         except Exception:
                             logger.warning("Failed to update tool status", exc_info=True)
 
-                    # Execute tools
+                    # Execute tools and collect results
+                    tool_results = []
                     for tool_call in response_message.tool_calls:
                         # Save tool call to logs
                         try:
@@ -228,6 +229,7 @@ class AIService:
                             logger.warning("Failed to save tool call to logs", exc_info=True)
 
                         tool_result = await self._execute_tool(tool_call)
+                        tool_results.append(tool_result)
 
                         # Save tool result to logs
                         try:
@@ -243,7 +245,56 @@ class AIService:
                         except Exception:
                             logger.warning("Failed to save tool result to logs", exc_info=True)
 
-                        messages.append(tool_result)
+                        # Append tool result to messages (removing internal 'success' field)
+                        messages.append({k: v for k, v in tool_result.items() if k != "success"})
+
+                    # Check if we should skip next AI call (optimization)
+                    should_skip_next_call = self._should_skip_next_call(
+                        response_message.tool_calls, tool_results
+                    )
+
+                    if should_skip_next_call:
+                        # Log skip for debugging
+                        logger.info(
+                            "Skipping next AI call: all tools have skip_next_call=true and succeeded"
+                        )
+
+                        # Log to chat logs
+                        try:
+                            self.chat_logs_repo.add_message(
+                                context.chat.id,
+                                "Ассистент",
+                                True,
+                                "⚡ Пропущен повторный вызов AI (оптимизация токенов)",
+                            )
+                        except Exception:
+                            logger.warning("Failed to log skip to chat logs", exc_info=True)
+
+                        # Record telemetry with skipped call info
+                        latency_ms = int((time.time() - overall_start_time) * 1000)
+                        try:
+                            if context.user and context.user.id:
+                                # Track this as a skipped call in telemetry
+                                # We'll add a custom field or note in tool_calls
+                                tool_calls_with_skip = self._current_request_tool_calls + [
+                                    "[SKIPPED_AI_CALL]"
+                                ]
+
+                                self.telemetry_repo.record_request(
+                                    user_id=context.user.id,
+                                    chat_id=context.chat.id,
+                                    model=self.model,
+                                    tokens_input=total_input_tokens,
+                                    tokens_output=total_output_tokens,
+                                    tokens_cached=total_cached_tokens,
+                                    latency_ms=latency_ms,
+                                    tool_calls=tool_calls_with_skip,
+                                )
+                        except Exception:
+                            logger.exception("Failed to record telemetry")
+
+                        # Return empty response (tool results already in chat logs)
+                        return "", self._memory_updates, self._pending_reactions
 
                     # Continue loop to get next response from model
                     continue
@@ -323,10 +374,80 @@ class AIService:
         """Get available tools definition."""
         try:
             with open(self.config.TOOLS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                tools = json.load(f)
+
+            # Process tools: add skip_next_call info to description and remove the parameter
+            processed_tools = []
+            for tool in tools:
+                # Check if tool has skip_next_call flag
+                skip_next_call = tool.get("skip_next_call", False)
+
+                # If skip_next_call is True, add instruction to description
+                if skip_next_call and "function" in tool:
+                    original_desc = tool["function"].get("description", "")
+                    # Add warning about no feedback
+                    tool["function"]["description"] = (
+                        f"{original_desc}\n\n⚠️ Этот инструмент выполняется БЕЗ обратной связи. "
+                        "Формулируй сообщение сразу готовым для пользователя."
+                    )
+
+                # Remove skip_next_call before sending to OpenAI (not part of their schema)
+                clean_tool = {k: v for k, v in tool.items() if k != "skip_next_call"}
+                processed_tools.append(clean_tool)
+
+            return processed_tools
         except Exception as e:
             logger.error(f"Failed to load tools from {self.config.TOOLS_FILE}: {e}")
             return []
+
+    def _should_skip_next_call(self, tool_calls: List[Any], tool_results: List[dict]) -> bool:
+        """Check if we should skip the next AI call based on skip_next_call flags.
+
+        Returns True if:
+        - All executed tools have skip_next_call=true
+        - All tools succeeded (no errors)
+
+        Args:
+            tool_calls: List of tool call objects from AI
+            tool_results: List of tool result dicts with 'success' field
+
+        Returns:
+            bool: True if we should skip next AI call
+        """
+        if not tool_calls or not tool_results:
+            return False
+
+        # Load tools configuration to check skip_next_call flags
+        try:
+            with open(self.config.TOOLS_FILE, "r", encoding="utf-8") as f:
+                tools_config = json.load(f)
+
+            # Create a mapping of tool names to skip_next_call flags
+            skip_flags = {}
+            for tool in tools_config:
+                if "function" in tool and "name" in tool["function"]:
+                    tool_name = tool["function"]["name"]
+                    skip_flags[tool_name] = tool.get("skip_next_call", False)
+
+            # Check each executed tool
+            for tool_call, tool_result in zip(tool_calls, tool_results):
+                tool_name = tool_call.function.name
+
+                # If any tool doesn't have skip_next_call=true, continue normally
+                if not skip_flags.get(tool_name, False):
+                    return False
+
+                # If any tool failed, continue normally (AI needs to handle error)
+                if not tool_result.get("success", False):
+                    return False
+
+            # All tools have skip_next_call=true AND all succeeded
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to check skip_next_call flags: {e}")
+            # On error, play it safe and don't skip
+            return False
 
     async def _execute_tool(self, tool_call: Any) -> dict:
         """Execute a tool call and return the result message."""
@@ -686,11 +807,23 @@ class AIService:
             logger.exception(f"Error executing tool {name}")
             content = f"Error executing tool: {str(e)}"
 
+        # Determine if execution was successful (no errors)
+        is_success = not any(
+            [
+                content.startswith("Error:"),
+                content.startswith("Ошибка:"),
+                content.startswith("❌"),
+                "Не удалось" in content,
+                "не найден" in content.lower(),
+            ]
+        )
+
         return {
             "tool_call_id": tool_call.id,
             "role": "tool",
             "name": name,
             "content": content,
+            "success": is_success,  # Internal flag for skip_next_call logic
         }
 
     async def generate_speech(
@@ -913,8 +1046,6 @@ class AIService:
         system_prompt += f"\n\nТекущая дата: {date}"
 
         messages = [{"role": "system", "content": system_prompt}]
-
-        print(system_prompt)
 
         # 2. Build Chat History (Context)
         # Get history directly from repository helper
