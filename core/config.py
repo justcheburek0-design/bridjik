@@ -88,6 +88,11 @@ class Config:
         default_factory=lambda: int(os.getenv("MAX_OUTPUT_LENGTH", "4000"))
     )
 
+    # Context settings
+    AI_MULTIMODAL_CONTEXT: bool = field(
+        default_factory=lambda: os.getenv("AI_MULTIMODAL_CONTEXT", "True").lower() == "true"
+    )
+
     # Freeze options (hours)
     FREEZE_OPTIONS: tuple = (1, 4, 12, 24)
 

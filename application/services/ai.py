@@ -1107,7 +1107,7 @@ class AIService:
         # Base text format
         text_content = text if is_bot else f"{author}: {text}"
 
-        if image_bytes and mime_type:
+        if image_bytes and mime_type and self.config.AI_MULTIMODAL_CONTEXT:
             # Multimodal content
             content_parts = []
             if text:
