@@ -85,15 +85,15 @@ class TelemetryRepository:
 
         input_per_1m = pricing.get("input_per_1m", 0.0)
         output_per_1m = pricing.get("output_per_1m", 0.0)
-        cached_discount = pricing.get("cached_discount", 0.5)
+        cache_read_per_1m = pricing.get("cache_read_per_1m", 0.0)
 
         # Calculate costs
-        # Regular input tokens
+        # Regular (non-cached) input tokens
         regular_input_tokens = max(0, tokens_input - tokens_cached)
         input_cost = (regular_input_tokens / 1_000_000) * input_per_1m
 
-        # Cached tokens (with discount)
-        cached_cost = (tokens_cached / 1_000_000) * input_per_1m * cached_discount
+        # Cached tokens billed at cache read price
+        cached_cost = (tokens_cached / 1_000_000) * cache_read_per_1m
 
         # Output tokens
         output_cost = (tokens_output / 1_000_000) * output_per_1m

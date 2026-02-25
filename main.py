@@ -9,6 +9,7 @@ from core.dependencies import Container
 from presentation.handlers import (
     admin_analytics,
     admin_memories,
+    admin_models,
     admin_stickers,
     callbacks,
     messages,
@@ -129,6 +130,7 @@ def register_handlers(container: Container):
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
     dp.include_router(admin_memories.router)
+    dp.include_router(admin_models.router)
     dp.include_router(admin_analytics.router)
 
     # Messages and callbacks

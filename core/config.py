@@ -138,8 +138,6 @@ class Config:
             raise ConfigurationError("OPENAI_API_KEY is required in .env")
         if not self.MC_SERVER_HOST:
             raise ConfigurationError("MC_SERVER_HOST is required in .env")
-        # if not self.JINA_API_KEY:  # RAG disabled
-        #     raise ConfigurationError("JINA_API_KEY is required in .env")
         if not self.GOOGLE_API_KEY:
             raise ConfigurationError("GOOGLE_API_KEY is required in .env")
         if not self.PIXABAY_API_KEY:
