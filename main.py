@@ -6,14 +6,7 @@ import signal
 import sys
 
 from core.dependencies import Container
-from presentation.handlers import (
-    admin_memories,
-    admin_metrics,
-    admin_models,
-    admin_stickers,
-    callbacks,
-    messages,
-)
+from presentation.handlers import admin_memories, admin_metrics, admin_stickers, callbacks, messages
 from presentation.handlers.commands import admin, info, server, start, user
 
 logging.basicConfig(
@@ -130,7 +123,6 @@ def register_handlers(container: Container):
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
     dp.include_router(admin_memories.router)
-    dp.include_router(admin_models.router)
     dp.include_router(admin_metrics.router)
 
     # Messages and callbacks

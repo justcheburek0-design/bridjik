@@ -49,9 +49,7 @@ class Container:
         self.freezes_repo = FreezesRepository(self.config.FREEZES_FILE)
         self.stickers_repo = StickersRepository(self.config.STICKERS_FILE)
         self.memory_repo = MemoryRepository(self.config.MEMORIES_FILE)
-        self.telemetry_repo = TelemetryRepository(
-            self.config.TELEMETRY_FILE, self.config.PRICING_FILE
-        )
+        self.telemetry_repo = TelemetryRepository(self.config.TELEMETRY_FILE)
 
         # External APIs
         self.mc_api = MinecraftAPI(self.config.MC_SERVER_HOST, self.config.MC_CACHE_TTL)

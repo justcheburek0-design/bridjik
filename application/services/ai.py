@@ -85,6 +85,7 @@ class AIService:
         # Track current request for telemetry
         self._current_request_start_time = 0
         self._current_request_tool_calls = []
+        self._current_user_id: Optional[int] = None
 
     async def should_respond(self, dto: IncomingMessageDTO, bot_username: str) -> bool:
         """Check if bot should respond to the message."""
@@ -147,6 +148,8 @@ class AIService:
 
         # Store message for tool execution (e.g., add_sticker needs sticker file_id)
         self._current_message = message
+        self._current_user_id = context.user.id if context.user else None
+        self._current_chat = context.chat
         # Reset memory updates tracker
         self._memory_updates = []
         # Reset telemetry tracking
@@ -159,6 +162,7 @@ class AIService:
         total_input_tokens = 0
         total_output_tokens = 0
         total_cached_tokens = 0
+        total_cost_credits: float = 0.0
 
         messages = self._build_messages(full_system_prompt, context, message)
         tools = self._get_tools()
@@ -178,6 +182,9 @@ class AIService:
                         prompt_details = response.usage.prompt_tokens_details
                         if prompt_details and hasattr(prompt_details, "cached_tokens"):
                             total_cached_tokens += prompt_details.cached_tokens or 0
+
+                if hasattr(response.usage, "cost") and response.usage.cost:
+                    total_cost_credits += float(response.usage.cost)
 
                 # Check for tool calls
                 # Update status if AI provided content
@@ -289,6 +296,7 @@ class AIService:
                                     tokens_cached=total_cached_tokens,
                                     latency_ms=latency_ms,
                                     tool_calls=tool_calls_with_skip,
+                                    cost_usd=total_cost_credits,
                                 )
                         except Exception:
                             logger.exception("Failed to record telemetry")
@@ -316,6 +324,7 @@ class AIService:
                             tokens_cached=total_cached_tokens,
                             latency_ms=latency_ms,
                             tool_calls=self._current_request_tool_calls,
+                            cost_usd=total_cost_credits,
                         )
 
                         # Check soft budget limit and add warning if needed
@@ -343,6 +352,7 @@ class AIService:
                         latency_ms=latency_ms,
                         tool_calls=self._current_request_tool_calls,
                         error="Loop limit reached",
+                        cost_usd=total_cost_credits,
                     )
             except Exception:
                 logger.exception("Failed to record telemetry")
@@ -365,6 +375,7 @@ class AIService:
                         latency_ms=latency_ms,
                         tool_calls=self._current_request_tool_calls,
                         error=str(e),
+                        cost_usd=total_cost_credits,
                     )
             except Exception:
                 logger.exception("Failed to record telemetry")
@@ -1140,6 +1151,13 @@ class AIService:
             "messages": messages,
             "temperature": TEMPERATURE,
         }
+        if self._current_user_id:
+            chat = getattr(self, "_current_chat", None)
+            if chat and chat.type == "private":
+                kwargs["user"] = f"user_{self._current_user_id}"
+            else:
+                chat_id = chat.id if chat else self._current_user_id
+                kwargs["user"] = f"chat_{chat_id}"
         if tools:
             kwargs["tools"] = tools
 

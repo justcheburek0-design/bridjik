@@ -12,13 +12,10 @@ logger = logging.getLogger(__name__)
 class TelemetryRepository:
     """Repository for managing telemetry data."""
 
-    def __init__(self, telemetry_file: Path, pricing_file: Path):
+    def __init__(self, telemetry_file: Path):
         self.telemetry_file = telemetry_file
-        self.pricing_file = pricing_file
         self._metrics: List[Dict[str, Any]] = []
-        self._pricing: Dict[str, Dict[str, float]] = {}
         self._load_telemetry()
-        self._load_pricing()
 
     def _load_telemetry(self) -> None:
         """Load telemetry data from JSON file."""
@@ -43,69 +40,6 @@ class TelemetryRepository:
         except Exception:
             logger.exception("Failed to save telemetry data")
 
-    def _load_pricing(self) -> None:
-        """Load pricing configuration from JSON file."""
-        if not self.pricing_file.exists():
-            logger.warning(f"Pricing file not found: {self.pricing_file}")
-            self._pricing = {}
-            return
-
-        try:
-            with open(self.pricing_file, "r", encoding="utf-8") as f:
-                self._pricing = json.load(f)
-            logger.info(f"Loaded pricing for {len(self._pricing)} models")
-        except Exception:
-            logger.exception("Failed to load pricing data")
-            self._pricing = {}
-
-    def reload_pricing(self) -> None:
-        """Reload pricing from disk. Call after pricing.json is updated externally."""
-        self._load_pricing()
-        logger.info("Pricing reloaded from disk")
-
-    def _calculate_cost(
-        self,
-        model: str,
-        tokens_input: int,
-        tokens_output: int,
-        tokens_cached: int = 0,
-    ) -> float:
-        """Calculate cost in USD for the given usage.
-
-        Args:
-            model: Model name (e.g., "x-ai/grok-4.1-fast")
-            tokens_input: Number of input tokens
-            tokens_output: Number of output tokens
-            tokens_cached: Number of cached tokens (get discount)
-
-        Returns:
-            Cost in USD
-        """
-        # Get pricing for model or use default
-        pricing = self._pricing.get(model, self._pricing.get("default", {}))
-
-        if not pricing:
-            logger.warning(f"No pricing data for model {model}, using zero cost")
-            return 0.0
-
-        input_per_1m = pricing.get("input_per_1m", 0.0)
-        output_per_1m = pricing.get("output_per_1m", 0.0)
-        cache_read_per_1m = pricing.get("cache_read_per_1m", 0.0)
-
-        # Calculate costs
-        # Regular (non-cached) input tokens
-        regular_input_tokens = max(0, tokens_input - tokens_cached)
-        input_cost = (regular_input_tokens / 1_000_000) * input_per_1m
-
-        # Cached tokens billed at cache read price
-        cached_cost = (tokens_cached / 1_000_000) * cache_read_per_1m
-
-        # Output tokens
-        output_cost = (tokens_output / 1_000_000) * output_per_1m
-
-        total_cost = input_cost + cached_cost + output_cost
-        return round(total_cost, 6)  # Round to 6 decimal places
-
     def record_request(
         self,
         user_id: int,
@@ -118,6 +52,7 @@ class TelemetryRepository:
         tool_calls: Optional[List[str]] = None,
         error: Optional[str] = None,
         retries: int = 0,
+        cost_usd: Optional[float] = None,
     ) -> None:
         """Record a telemetry event for an AI request.
 
@@ -132,9 +67,9 @@ class TelemetryRepository:
             tool_calls: List of tool names called
             error: Error message if request failed
             retries: Number of retries attempted
+            cost_usd: Cost in USD from OpenRouter usage.cost (1 credit = $1 USD)
         """
-        # Calculate cost
-        cost_usd = self._calculate_cost(model, tokens_input, tokens_output, tokens_cached)
+        actual_cost = cost_usd if cost_usd is not None else 0.0
 
         # Extract provider from model name (e.g., "x-ai/grok-4.1-fast" -> "x-ai")
         provider = model.split("/")[0] if "/" in model else "unknown"
@@ -149,7 +84,7 @@ class TelemetryRepository:
             "tokens_output": tokens_output,
             "tokens_cached": tokens_cached,
             "tokens_total": tokens_input + tokens_output,
-            "cost_usd": cost_usd,
+            "cost_usd": actual_cost,
             "latency_ms": latency_ms,
             "tool_calls": tool_calls or [],
             "error": error,
@@ -160,7 +95,7 @@ class TelemetryRepository:
         self._save_telemetry()
 
         logger.info(
-            f"Recorded telemetry: user={user_id}, tokens={metric['tokens_total']}, cost=${cost_usd:.6f}"
+            f"Recorded telemetry: user={user_id}, tokens={metric['tokens_total']}, cost=${actual_cost:.6f}"
         )
 
     def _get_window_start(self, hours: int) -> datetime:
