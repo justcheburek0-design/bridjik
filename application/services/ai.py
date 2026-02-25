@@ -30,6 +30,28 @@ from utils.html_edit import remove as remove_html
 log = structlog.get_logger(__name__)
 
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
+
+
+@dataclass
+class _TokenUsage:
+    input: int = 0
+    output: int = 0
+    cached: int = 0
+    cost: float = 0.0
+
+    def add(self, response: Any) -> None:
+        usage = getattr(response, "usage", None)
+        if not usage:
+            return
+        self.input += usage.prompt_tokens or 0
+        self.output += usage.completion_tokens or 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details:
+            self.cached += getattr(details, "cached_tokens", 0) or 0
+        if getattr(usage, "cost", None):
+            self.cost += float(usage.cost)
+
+
 TEMPERATURE = 1
 
 BOT_ADDRESS_RE = re.compile(
@@ -53,7 +75,7 @@ NOISE_RE = re.compile(r"^\s*(?:[^\w\s]|[\w]{1,2})\s*$")
 class AIServiceDeps:
     """All external dependencies for AIService."""
 
-    openai_client: AsyncOpenAI
+    client: AsyncOpenAI
     history_repo: IHistoryRepository
     chat_logs_repo: IChatLogsRepository
     model: str
@@ -72,19 +94,7 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
     """Service for AI completions."""
 
     def __init__(self, deps: AIServiceDeps):
-        self.client = deps.openai_client
-        self.history_repo = deps.history_repo
-        self.chat_logs_repo = deps.chat_logs_repo
-        self.model = deps.model
-        self.mb_api = deps.mb_api
-        self.mc_api = deps.mc_api
-        self.news_api = deps.news_api
-        self.tavily_api = deps.tavily_api
-        self.config = deps.config
-        self.stickers_repo = deps.stickers_repo
-        self.memory_repo = deps.memory_repo
-        self.rag_service = deps.rag_service
-        self.telemetry_repo = deps.telemetry_repo
+        self.__dict__.update(vars(deps))
 
         self._memory_updates: list = []
         self._pending_reactions: list[tuple[str, str]] = []
@@ -172,10 +182,7 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
         self._current_request_tool_calls = []
 
         overall_start = time.time()
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_cached_tokens = 0
-        total_cost_credits: float = 0.0
+        usage = _TokenUsage()
         telemetry_error: str | None = None
 
         messages = self._build_messages(system_prompt, context, message)
@@ -185,17 +192,7 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
             for _ in range(10):
                 response = await self._call_openai(messages, tools)
                 response_message = response.choices[0].message
-
-                if hasattr(response, "usage") and response.usage:
-                    total_input_tokens += response.usage.prompt_tokens or 0
-                    total_output_tokens += response.usage.completion_tokens or 0
-                    if hasattr(response.usage, "prompt_tokens_details"):
-                        details = response.usage.prompt_tokens_details
-                        if details and hasattr(details, "cached_tokens"):
-                            total_cached_tokens += details.cached_tokens or 0
-
-                if hasattr(response.usage, "cost") and response.usage.cost:
-                    total_cost_credits += float(response.usage.cost)
+                usage.add(response)
 
                 if response_message.content and on_tool_update:
                     with suppress(Exception):
@@ -278,10 +275,10 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
             self._record_telemetry(
                 context=context,
                 overall_start=overall_start,
-                total_input_tokens=total_input_tokens,
-                total_output_tokens=total_output_tokens,
-                total_cached_tokens=total_cached_tokens,
-                total_cost_credits=total_cost_credits,
+                total_input_tokens=usage.input,
+                total_output_tokens=usage.output,
+                total_cached_tokens=usage.cached,
+                total_cost_credits=usage.cost,
                 error=telemetry_error,
             )
 

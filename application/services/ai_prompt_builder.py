@@ -113,29 +113,31 @@ class AIPromptBuilderMixin:
         mem_parts: list[str] = []
         with suppress(Exception):
             if context.chat.id:
-                chat_mems = sorted(
-                    self.memory_repo.get_chat_memories(context.chat.id),
-                    key=lambda m: m.get("timestamp", ""),
-                    reverse=True,
+                mem_parts.extend(
+                    self._format_memories_block(
+                        "## Память чата:",
+                        self.memory_repo.get_chat_memories(context.chat.id),
+                    )
                 )
-                if items := [
-                    f"- {m['content'].strip()}" for m in chat_mems if m.get("content", "").strip()
-                ]:
-                    mem_parts.append("## Память чата:\n" + "\n".join(items))
-
             if context.user and context.user.id:
-                user_mems = sorted(
-                    self.memory_repo.get_user_memories(context.user.id),
-                    key=lambda m: m.get("timestamp", ""),
-                    reverse=True,
+                uname = context.user.username or context.user.first_name
+                mem_parts.extend(
+                    self._format_memories_block(
+                        f"## Память о пользователе {uname}:",
+                        self.memory_repo.get_user_memories(context.user.id),
+                    )
                 )
-                if items := [
-                    f"- {m['content'].strip()}" for m in user_mems if m.get("content", "").strip()
-                ]:
-                    uname = context.user.username or context.user.first_name
-                    mem_parts.append(f"## Память о пользователе {uname}:\n" + "\n".join(items))
-
         return ("\n\n# Память:\n" + "\n\n".join(mem_parts)) if mem_parts else ""
+
+    @staticmethod
+    def _format_memories_block(header: str, memories: list[dict]) -> list[str]:
+        """Format a list of memories into a titled block. Returns [] if empty."""
+        items = [
+            f"- {m['content'].strip()}"
+            for m in sorted(memories, key=lambda m: m.get("timestamp", ""), reverse=True)
+            if m.get("content", "").strip()
+        ]
+        return [header + "\n" + "\n".join(items)] if items else []
 
     def _format_multimodal_message(
         self,

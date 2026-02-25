@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+_ERROR_PREFIXES = ("Error:", "Ошибка:", "❌", "Не удалось")
+_ERROR_SUBSTRINGS = ("не найден",)
+
 
 class ToolResult(msgspec.Struct):
     """Result of a tool call."""
@@ -89,14 +92,10 @@ class AIToolsMixin:
 
     def _tool_result(self, tool_call: Any, content: str) -> ToolResult:
         """Build a ToolResult from a tool call and its content string."""
-        is_success = not any(
-            [
-                content.startswith("Error:"),
-                content.startswith("Ошибка:"),
-                content.startswith("❌"),
-                "Не удалось" in content,
-                "не найден" in content.lower(),
-            ]
+        content_lower = content.lower()
+        is_success = not (
+            content.startswith(_ERROR_PREFIXES)
+            or any(s in content_lower for s in _ERROR_SUBSTRINGS)
         )
         return ToolResult(
             tool_call_id=tool_call.id,

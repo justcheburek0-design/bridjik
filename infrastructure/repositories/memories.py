@@ -10,17 +10,18 @@ from pathlib import Path
 import msgspec.json as mjson
 
 from domain.interfaces import IMemoryRepository
+from infrastructure.repositories.base import BaseJSONRepository
 
 logger = logging.getLogger(__name__)
 
+_EMPTY_MEMORIES: dict = {"chats": {}, "users": {}}
 
-class MemoryRepository(IMemoryRepository):
+
+class MemoryRepository(BaseJSONRepository, IMemoryRepository):
     """JSON-based chat and user memory repository."""
 
     def __init__(self, file_path: Path):
-        self.file_path = file_path
-        self._memories: dict[str, dict[int, list[dict]]] = {"chats": {}, "users": {}}
-        self._load()
+        super().__init__(file_path)
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -50,47 +51,44 @@ class MemoryRepository(IMemoryRepository):
             return data["memories"] if data else None
         return self._memories["users"].get(scope_id)
 
-    def _load(self):
-        """Load memories from JSON file."""
-        if not self.file_path.exists():
-            self._memories = {"chats": {}, "users": {}}
-            return
+    @property
+    def _memories(self) -> dict:
+        return self._data  # type: ignore[return-value]
 
+    def _load(self) -> None:
+        """Load memories from JSON file with migration support."""
+        if not self.file_path.exists():
+            self._data = {"chats": {}, "users": {}}
+            return
         try:
             data = mjson.decode(self.file_path.read_bytes())
-
             if isinstance(data, dict) and "chats" in data and "users" in data:
-                self._memories = {
+                self._data = {
                     "chats": self._migrate_chats_data(data.get("chats", {})),
                     "users": {int(k): v for k, v in data.get("users", {}).items()},
                 }
             else:
-                # Very old structure: just chat_id -> memories
-                self._memories = {
+                self._data = {
                     "chats": {int(k): {"memories": v, "metadata": {}} for k, v in data.items()},
                     "users": {},
                 }
-
             logger.info(
-                f"Loaded memories: {len(self._memories['chats'])} chats, "
-                f"{len(self._memories['users'])} users"
+                "Loaded memories: %d chats, %d users",
+                len(self._data["chats"]),
+                len(self._data["users"]),
             )
         except Exception as e:
             logger.exception("Failed to load memories: %s", e)
-            self._memories = {"chats": {}, "users": {}}
+            self._data = {"chats": {}, "users": {}}
 
-    def _save(self):
-        """Save memories to JSON file."""
+    def _save(self) -> None:
+        """Save memories to JSON file (converts int keys to str for JSON)."""
         try:
-            # Ensure parent directory exists
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Convert integer keys to strings for JSON
             data = {
-                "chats": {str(k): v for k, v in self._memories["chats"].items()},
-                "users": {str(k): v for k, v in self._memories["users"].items()},
+                "chats": {str(k): v for k, v in self._data["chats"].items()},
+                "users": {str(k): v for k, v in self._data["users"].items()},
             }
-
             self.file_path.write_bytes(mjson.format(mjson.encode(data), indent=2))
         except Exception as e:
             logger.exception("Failed to save memories: %s", e)
@@ -334,10 +332,10 @@ class MemoryRepository(IMemoryRepository):
                 }
                 users_data = {}
 
-            self._memories = {"chats": chats_data, "users": users_data}
+            self._data = {"chats": chats_data, "users": users_data}
             self._save()
             logger.info("Restored memories successfully")
             return True
         except Exception as e:
-            logger.exception(f"Failed to restore memories: {e}")
+            logger.exception("Failed to restore memories: %s", e)
             return False

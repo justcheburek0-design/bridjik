@@ -67,7 +67,7 @@ class Container:
         self.rag_service = None
         self.ai_service = AIService(
             AIServiceDeps(
-                openai_client=self.openai_client,
+                client=self.openai_client,
                 history_repo=self.history_repo,
                 chat_logs_repo=self.chat_logs_repo,
                 model=self.config.AI_MODEL,
