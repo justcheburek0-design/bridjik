@@ -1,9 +1,10 @@
 """Minecraft server status API client."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
-from typing import Dict
 
 import httpx
 

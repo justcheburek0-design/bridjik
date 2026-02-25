@@ -1,6 +1,6 @@
 """Game service."""
 
-from typing import Optional
+from __future__ import annotations
 
 from domain.interfaces import IMemoryRepository
 
@@ -29,7 +29,7 @@ class GameService:
                 tags=["#game", "#guess"],
             )
 
-    def get_guessed_object(self, chat_id: int) -> Optional[str]:
+    def get_guessed_object(self, chat_id: int) -> str | None:
         """Get guessed object for chat from memory."""
         memories = self.memory_repo.search_memories("chat", chat_id, "#game")
         if memories:

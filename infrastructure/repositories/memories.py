@@ -1,14 +1,11 @@
 """Memory repository implementation."""
 
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import (  # Tuple  # RAG disabled (used only in find_similar_memories)
-    Dict,
-    List,
-    Optional,
-)
 
 import msgspec.json as mjson
 
@@ -22,7 +19,7 @@ class MemoryRepository(IMemoryRepository):
 
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self._memories: Dict[str, Dict[int, List[dict]]] = {"chats": {}, "users": {}}
+        self._memories: dict[str, dict[int, list[dict]]] = {"chats": {}, "users": {}}
         self._load()
 
     def _load(self):
@@ -110,8 +107,8 @@ class MemoryRepository(IMemoryRepository):
         self,
         chat_id: int,
         content: str,
-        tags: Optional[List[str]] = None,
-        author_id: Optional[int] = None,
+        tags: list[str] | None = None,
+        author_id: int | None = None,
     ) -> str:
         """Add a memory record for a chat. Returns memory ID."""
         memory_id = str(uuid.uuid4())
@@ -137,8 +134,8 @@ class MemoryRepository(IMemoryRepository):
         self,
         user_id: int,
         content: str,
-        tags: Optional[List[str]] = None,
-        author_id: Optional[int] = None,
+        tags: list[str] | None = None,
+        author_id: int | None = None,
     ) -> str:
         """Add a memory record about a user. Returns memory ID."""
         memory_id = str(uuid.uuid4())
@@ -168,8 +165,8 @@ class MemoryRepository(IMemoryRepository):
         scope: str,
         scope_id: int,
         memory_id: str,
-        content: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
     ) -> bool:
         """Update a memory record. Returns True if found and updated."""
         if scope not in ["chat", "user"]:
@@ -230,18 +227,18 @@ class MemoryRepository(IMemoryRepository):
 
         return deleted
 
-    def get_chat_memories(self, chat_id: int) -> List[dict]:
+    def get_chat_memories(self, chat_id: int) -> list[dict]:
         """Get all memories for a chat."""
         chat_data = self._memories["chats"].get(chat_id)
         if chat_data:
             return chat_data.get("memories", [])
         return []
 
-    def get_user_memories(self, user_id: int) -> List[dict]:
+    def get_user_memories(self, user_id: int) -> list[dict]:
         """Get all memories about a user."""
         return self._memories["users"].get(user_id, [])
 
-    def get_users_memories(self, user_ids: List[int]) -> dict:
+    def get_users_memories(self, user_ids: list[int]) -> dict:
         """Get memories about multiple users."""
         result = {}
         for user_id in user_ids:
@@ -250,7 +247,7 @@ class MemoryRepository(IMemoryRepository):
                 result[user_id] = memories
         return result
 
-    def search_memories(self, scope: str, scope_id: int, query: str) -> List[dict]:
+    def search_memories(self, scope: str, scope_id: int, query: str) -> list[dict]:
         """Search memories by tags or content."""
         if scope not in ["chat", "user"]:
             return []
@@ -277,7 +274,7 @@ class MemoryRepository(IMemoryRepository):
 
         return results
 
-    def search_and_delete(self, scope: str, scope_id: int, query: str) -> Optional[dict]:
+    def search_and_delete(self, scope: str, scope_id: int, query: str) -> dict | None:
         """Search for a memory and delete the first match. Returns deleted memory or None."""
         results = self.search_memories(scope, scope_id, query)
 

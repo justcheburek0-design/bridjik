@@ -1,5 +1,7 @@
 """Media handling service."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import mimetypes
@@ -8,7 +10,7 @@ import re
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -242,9 +244,7 @@ class MediaService:
             logger.exception("Failed to download animation")
             return None
 
-    async def _extract_sent_photo(
-        self, message: types.Message
-    ) -> tuple[Optional[bytes], Optional[str]]:
+    async def _extract_sent_photo(self, message: types.Message) -> tuple[bytes | None, str | None]:
         """Extract image bytes from a photo message that bot sent.
 
         Args:
@@ -304,7 +304,7 @@ class MediaService:
             pass
         return None
 
-    def _normalise_ext(self, ext: Optional[str]) -> str:
+    def _normalise_ext(self, ext: str | None) -> str:
         """Normalize image extension to supported format."""
         if not ext:
             return ""
@@ -317,7 +317,7 @@ class MediaService:
             return ".jpg"
         return ext
 
-    def _convert_webp_to_png(self, webp_bytes: bytes) -> Optional[bytes]:
+    def _convert_webp_to_png(self, webp_bytes: bytes) -> bytes | None:
         """Convert WebP image to PNG bytes."""
         try:
             img = Image.open(BytesIO(webp_bytes))
@@ -337,7 +337,7 @@ class MediaService:
             logger.warning("Failed to convert WebP to PNG: %s", exc)
             return None
 
-    def _extract_gif_important_frame(self, gif_bytes: bytes) -> Optional[bytes]:
+    def _extract_gif_important_frame(self, gif_bytes: bytes) -> bytes | None:
         """Extract important frame (middle) from GIF/animation and convert to PNG."""
         try:
             # Check if it's a valid image file (TGS stickers are not valid images)
@@ -377,7 +377,7 @@ class MediaService:
             logger.warning("Failed to extract frame from animation: %s", exc)
             return None
 
-    def _guess_image_extension(self, url: str, content_type: Optional[str]) -> str:
+    def _guess_image_extension(self, url: str, content_type: str | None) -> str:
         """Try to determine correct image extension by MIME and URL."""
         primary = (content_type or "").split(";")[0].strip().lower()
         ext = ""
@@ -391,7 +391,7 @@ class MediaService:
             return ".jpg"
         return ext
 
-    def _build_image_filename(self, query: str, url: str, content_type: Optional[str]) -> str:
+    def _build_image_filename(self, query: str, url: str, content_type: str | None) -> str:
         """Build safe filename for saving image."""
         ext = self._guess_image_extension(url, content_type)
         base = re.sub(r"[^a-z0-9_-]+", "_", (query or "image").strip().lower())
@@ -656,7 +656,7 @@ class MediaService:
 
     async def _resolve_sticker_payload(
         self, payload: str, chat_id: int
-    ) -> tuple[Optional[str], Optional[str], float]:
+    ) -> tuple[str | None, str | None, float]:
         """Resolve sticker payload: last/alias/file_id -> file_id with fuzzy matching.
 
         Returns:
@@ -949,7 +949,7 @@ class MediaService:
 
         return sent_messages
 
-    async def _extract_video_sticker_frame(self, video_bytes: bytes) -> Optional[bytes]:
+    async def _extract_video_sticker_frame(self, video_bytes: bytes) -> bytes | None:
         """Extract first frame from video sticker."""
         try:
             import shutil
@@ -1038,7 +1038,7 @@ class MediaService:
             logger.warning("Failed to extract video sticker frame: %s", exc)
             return None
 
-    async def _convert_tgs_to_image(self, tgs_bytes: bytes) -> Optional[bytes]:
+    async def _convert_tgs_to_image(self, tgs_bytes: bytes) -> bytes | None:
         """Convert TGS animated sticker to static image."""
         try:
             import gzip

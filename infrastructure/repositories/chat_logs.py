@@ -1,11 +1,12 @@
 """Chat logs repository implementation."""
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import logging
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Tuple
 
 import msgspec.json as mjson
 
@@ -21,18 +22,18 @@ class ChatLogsRepository(IChatLogsRepository):
         self.max_messages = max_messages
         # Store: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
         # reactions is a dict: {user_id: [emoji1, emoji2]}
-        self._logs: Dict[
+        self._logs: dict[
             int,
-            Deque[
-                Tuple[
-                    Optional[int],
+            deque[
+                tuple[
+                    int | None,
                     str,
                     bool,
                     str,
-                    Optional[bytes],
-                    Optional[str],
-                    Optional[str],
-                    Optional[str],
+                    bytes | None,
+                    str | None,
+                    str | None,
+                    str | None,
                     dict[str, list[str]],
                 ]
             ],
@@ -53,15 +54,15 @@ class ChatLogsRepository(IChatLogsRepository):
                 except Exception:
                     continue
 
-                dq: Deque[
-                    Tuple[
-                        Optional[int],
+                dq: deque[
+                    tuple[
+                        int | None,
                         str,
                         bool,
                         str,
-                        Optional[bytes],
-                        Optional[str],
-                        Optional[str],
+                        bytes | None,
+                        str | None,
+                        str | None,
                         dict[int, list[str]],
                     ]
                 ] = deque(maxlen=self.max_messages)
@@ -160,7 +161,7 @@ class ChatLogsRepository(IChatLogsRepository):
         Note: This is now run in a thread executor to avoid blocking the event loop.
         """
         try:
-            out: Dict[str, list] = {}
+            out: dict[str, list] = {}
             # Copy keys first to avoid "dictionary changed size during iteration"
             chat_ids = list(self._logs.keys())
 
@@ -209,11 +210,11 @@ class ChatLogsRepository(IChatLogsRepository):
         author: str,
         is_bot: bool,
         text: str,
-        message_id: Optional[int] = None,
-        image_bytes: Optional[bytes] = None,
-        mime_type: Optional[str] = None,
-        file_id: Optional[str] = None,
-        reactions: Optional[dict[int, list[str]]] = None,
+        message_id: int | None = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
+        file_id: str | None = None,
+        reactions: dict[int, list[str]] | None = None,
     ) -> None:
         """Add message to chat logs."""
         self._logs[chat_id].append(
@@ -267,7 +268,7 @@ class ChatLogsRepository(IChatLogsRepository):
                 self._schedule_save()
                 break
 
-    def get_file_id_by_message_id(self, chat_id: int, message_id: int) -> Optional[str]:
+    def get_file_id_by_message_id(self, chat_id: int, message_id: int) -> str | None:
         # Get file_id by message_id from chat logs.
         if chat_id not in self._logs:
             return None
@@ -282,16 +283,11 @@ class ChatLogsRepository(IChatLogsRepository):
                     return file_id
         return None
 
-    def get_recent_messages(self, chat_id: int, limit: int) -> List[
-        Tuple[
-            Optional[int],
-            str,
-            bool,
-            str,
-            Optional[bytes],
-            Optional[str],
-            Optional[str],
-            dict[int, list[str]],
+    def get_recent_messages(
+        self, chat_id: int, limit: int
+    ) -> list[
+        tuple[
+            int | None, str, bool, str, bytes | None, str | None, str | None, dict[int, list[str]]
         ]
     ]:
         """Get recent messages."""
@@ -314,7 +310,7 @@ class ChatLogsRepository(IChatLogsRepository):
 
         return normalized[-limit:] if limit else normalized
 
-    def get_message_by_id(self, chat_id: int, message_id: int) -> Optional[Tuple[str, bool, str]]:
+    def get_message_by_id(self, chat_id: int, message_id: int) -> tuple[str, bool, str] | None:
         """Get message by message_id.
 
         Args:

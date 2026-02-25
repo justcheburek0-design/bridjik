@@ -1,7 +1,8 @@
 """Repository interfaces."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 
 class IHistoryRepository(ABC):
@@ -32,7 +33,7 @@ class IHistoryRepository(ABC):
         pass
 
     @abstractmethod
-    def get_history(self, chat_id: int, user_id: int) -> List[dict]:
+    def get_history(self, chat_id: int, user_id: int) -> list[dict]:
         """Get conversation history. Returns list of message dicts."""
         pass
 
@@ -47,54 +48,33 @@ class IChatLogsRepository(ABC):
         author: str,
         is_bot: bool,
         text: str,
-        message_id: Optional[int] = None,
-        image_bytes: Optional[bytes] = None,
-        mime_type: Optional[str] = None,
+        message_id: int | None = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ) -> None:
-        """Add message to chat logs.
-
-        Args:
-            chat_id: Chat ID
-            author: Author name
-            is_bot: Whether message is from bot
-            text: Text content (including media description)
-            message_id: Optional message ID
-            image_bytes: Optional image data
-            mime_type: Optional MIME type for image
-        """
+        """Add message to chat logs."""
         pass
 
     @abstractmethod
     def update_reactions(
         self, chat_id: int, message_id: int, reactions: dict[str, list[str]]
     ) -> None:
-        """Update reactions for a message.
-
-        Args:
-            chat_id: Chat ID
-            message_id: Message ID
-            reactions: Dictionary mapping author_name to list of reaction emojis
-        """
+        """Update reactions for a message."""
         pass
 
     @abstractmethod
-    def get_recent_messages(self, chat_id: int, limit: int) -> List[
-        Tuple[
-            Optional[int],
-            str,
-            bool,
-            str,
-            Optional[bytes],
-            Optional[str],
-            Optional[str],
-            dict[str, list[str]],
+    def get_recent_messages(
+        self, chat_id: int, limit: int
+    ) -> list[
+        tuple[
+            int | None, str, bool, str, bytes | None, str | None, str | None, dict[str, list[str]]
         ]
     ]:
         """Get recent messages. returns (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)."""
         pass
 
     @abstractmethod
-    def get_message_by_id(self, chat_id: int, message_id: int) -> Optional[Tuple[str, bool, str]]:
+    def get_message_by_id(self, chat_id: int, message_id: int) -> tuple[str, bool, str] | None:
         """Get message by message_id. Returns (author, is_bot, text) or None if not found."""
         pass
 
@@ -112,8 +92,8 @@ class IMemoryRepository(ABC):
         self,
         chat_id: int,
         content: str,
-        tags: Optional[List[str]] = None,
-        author_id: Optional[int] = None,
+        tags: list[str] | None = None,
+        author_id: int | None = None,
     ) -> str:
         """Add a memory record for a chat. Returns memory ID."""
         pass
@@ -123,8 +103,8 @@ class IMemoryRepository(ABC):
         self,
         user_id: int,
         content: str,
-        tags: Optional[List[str]] = None,
-        author_id: Optional[int] = None,
+        tags: list[str] | None = None,
+        author_id: int | None = None,
     ) -> str:
         """Add a memory record about a user. Returns memory ID."""
         pass
@@ -135,70 +115,40 @@ class IMemoryRepository(ABC):
         scope: str,
         scope_id: int,
         memory_id: str,
-        content: Optional[str] = None,
-        tags: Optional[List[str]] = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
     ) -> bool:
-        """Update a memory record. Returns True if found and updated.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            memory_id: ID of memory to update
-            content: New content (optional)
-            tags: New tags (optional)
-        """
+        """Update a memory record. Returns True if found and updated."""
         pass
 
     @abstractmethod
     def delete_memory(self, scope: str, scope_id: int, memory_id: str) -> bool:
-        """Delete a memory by ID. Returns True if found and deleted.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            memory_id: ID of memory to delete
-        """
+        """Delete a memory by ID. Returns True if found and deleted."""
         pass
 
     @abstractmethod
-    def get_chat_memories(self, chat_id: int) -> List[dict]:
+    def get_chat_memories(self, chat_id: int) -> list[dict]:
         """Get all memories for a chat."""
         pass
 
     @abstractmethod
-    def get_user_memories(self, user_id: int) -> List[dict]:
+    def get_user_memories(self, user_id: int) -> list[dict]:
         """Get all memories about a user."""
         pass
 
     @abstractmethod
-    def get_users_memories(self, user_ids: List[int]) -> dict:
-        """Get memories about multiple users.
-
-        Returns:
-            Dictionary mapping user_id -> list of memories
-        """
+    def get_users_memories(self, user_ids: list[int]) -> dict:
+        """Get memories about multiple users. Returns dict mapping user_id -> list of memories."""
         pass
 
     @abstractmethod
-    def search_memories(self, scope: str, scope_id: int, query: str) -> List[dict]:
-        """Search memories by tags or content.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            query: Search query
-        """
+    def search_memories(self, scope: str, scope_id: int, query: str) -> list[dict]:
+        """Search memories by tags or content."""
         pass
 
     @abstractmethod
-    def search_and_delete(self, scope: str, scope_id: int, query: str) -> Optional[dict]:
-        """Search for a memory and delete the first match. Returns deleted memory or None.
-
-        Args:
-            scope: "chat" or "user"
-            scope_id: chat_id or user_id
-            query: Search query
-        """
+    def search_and_delete(self, scope: str, scope_id: int, query: str) -> dict | None:
+        """Search for a memory and delete the first match. Returns deleted memory or None."""
         pass
 
     # @abstractmethod  # RAG disabled - uncomment to enable
@@ -233,7 +183,7 @@ class IFreezesRepository(ABC):
         pass
 
     @abstractmethod
-    def get_freeze(self, user_id: int) -> Optional[float]:
+    def get_freeze(self, user_id: int) -> float | None:
         """Get freeze expiration timestamp."""
         pass
 

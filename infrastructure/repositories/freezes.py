@@ -1,9 +1,10 @@
 """Freezes repository implementation."""
 
+from __future__ import annotations
+
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Optional
 
 import msgspec.json as mjson
 
@@ -15,7 +16,7 @@ class FreezesRepository(IFreezesRepository):
 
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self._freezes: Dict[int, float] = {}
+        self._freezes: dict[int, float] = {}
         self._load()
 
     def _load(self) -> None:
@@ -49,7 +50,7 @@ class FreezesRepository(IFreezesRepository):
         except Exception:
             logging.exception("Failed to save freezes to JSON")
 
-    def _cleanup(self, now: Optional[float] = None) -> None:
+    def _cleanup(self, now: float | None = None) -> None:
         """Remove expired freezes."""
         if now is None:
             now = time.time()
@@ -70,7 +71,7 @@ class FreezesRepository(IFreezesRepository):
         self._save()
         return expires_at
 
-    def get_freeze(self, user_id: int) -> Optional[float]:
+    def get_freeze(self, user_id: int) -> float | None:
         """Get freeze expiration timestamp."""
         self._cleanup()
         expires_at = self._freezes.get(user_id)

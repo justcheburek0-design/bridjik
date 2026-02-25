@@ -1,33 +1,39 @@
 """Main entry point for the bot."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import signal
 import sys
 
+import structlog
+
 from core.dependencies import Container
 from presentation.handlers import admin_memories, admin_metrics, admin_stickers, callbacks, messages
 from presentation.handlers.commands import admin, info, server, start, user
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+structlog.configure(
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.dev.ConsoleRenderer(),
+    ],
 )
-logger = logging.getLogger(__name__)
 
-# Global flag for graceful shutdown
+log = structlog.get_logger(__name__)
+
 _shutdown_event = None
 
 
 def _handle_signal(signum, frame):
     """Handle SIGTERM and SIGINT signals for immediate shutdown."""
     sig_name = signal.Signals(signum).name
-    logger.warning(f"Received {sig_name} signal, initiating immediate shutdown...")
-
-    # Set the shutdown event if it exists
+    log.warning("signal.received", signal=sig_name)
     if _shutdown_event:
         _shutdown_event.set()
-
-    # Exit immediately
     sys.exit(0)
 
 
@@ -35,78 +41,64 @@ async def on_startup(container: Container):
     """Execute on bot startup."""
     try:
         me = await container.bot.get_me()
-        logger.info(f"Bot started: @{me.username or 'unknown'}")
+        log.info("bot.started", username=me.username or "unknown")
 
-        # Update config with actual bot username
         if me.username:
             container.config.BOT_USERNAME = me.username
 
-        # Log bot restart to chat logs for all known chats
         restart_message = f"🔄 Бот перезагружен (версия {container.config.VERSION})"
         restart_count = 0
         for chat_id in container.chat_logs_repo._logs.keys():
-            # Check if last message is already a restart message
             recent = container.chat_logs_repo.get_recent_messages(chat_id, limit=1)
             if recent:
-                last_msg = recent[-1]
-                # Format: (message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions)
-                last_text = last_msg[3] if len(last_msg) > 3 else ""
+                last_text = recent[-1][3] if len(recent[-1]) > 3 else ""
                 if last_text.startswith("🔄 Бот перезагружен"):
-                    continue  # Skip adding restart message if last message is already a restart
+                    continue
 
             container.chat_logs_repo.add_message(
                 chat_id=chat_id,
                 author="System",
                 is_bot=True,
                 text=restart_message,
-                message_id=None,  # System message doesn't have Telegram message_id
+                message_id=None,
             )
             restart_count += 1
-        logger.info(
-            f"Logged restart notification to {restart_count}/{len(container.chat_logs_repo._logs)} chats"
+        log.info(
+            "bot.restart_logged",
+            count=restart_count,
+            total=len(container.chat_logs_repo._logs),
         )
     except Exception:
-        logger.exception("Failed to get bot info on startup")
-
-    # # Initialize RAG index (DISABLED - uncomment to enable)
-    # try:
-    #     logger.info("Initializing RAG index...")
-    #     await container.rag_service._ensure_rag_index()
-    #     chunks = container.rag_service.get_chunks()
-    #     logger.info(f"RAG index initialized with {len(chunks)} chunks")
-    # except Exception:
-    #     logger.exception("RAG: failed to ensure index on startup")
+        log.exception("bot.startup_failed")
 
 
 async def on_shutdown(container: Container):
     """Execute on bot shutdown."""
-    logger.info("Shutting down bot...")
+    log.info("bot.shutting_down")
 
     try:
-        # Close OpenAI client with timeout
         aclose = getattr(container.openai_client, "aclose", None)
-        if callable(aclose):
-            try:
-                if asyncio.iscoroutinefunction(aclose):
-                    await asyncio.wait_for(aclose(), timeout=2.0)
-                else:
-                    aclose()
-                logger.debug("OpenAI client closed")
-            except asyncio.TimeoutError:
-                logger.warning("OpenAI client close timeout")
+        if callable(aclose) and asyncio.iscoroutinefunction(aclose):
+            async with asyncio.timeout(2.0):
+                await aclose()
+            log.debug("openai.client_closed")
+        elif callable(aclose):
+            aclose()
+    except TimeoutError:
+        log.warning("openai.close_timeout")
     except Exception:
-        logger.exception("Error closing openai client")
+        log.exception("openai.close_error")
 
     try:
-        # Close bot session with timeout
-        await asyncio.wait_for(container.bot.session.close(), timeout=2.0)
-        logger.debug("Bot session closed")
-    except asyncio.TimeoutError:
-        logger.warning("Bot session close timeout")
+        async with asyncio.timeout(2.0):
+            await container.bot.session.close()
+        log.debug("bot.session_closed")
+    except TimeoutError:
+        log.warning("bot.session_close_timeout")
     except Exception:
-        logger.exception("Error closing bot session")
+        log.exception("bot.session_close_error")
 
-    logger.info("Bot shutdown complete")
+    log.info("bot.shutdown_complete")
 
 
 def register_handlers(container: Container):
@@ -114,8 +106,6 @@ def register_handlers(container: Container):
     dp = container.dispatcher
     deps = container.get_handler_dependencies()
 
-    # Register routers with dependencies
-    # Commands
     dp.include_router(start.router)
     dp.include_router(user.router)
     dp.include_router(info.router)
@@ -124,51 +114,38 @@ def register_handlers(container: Container):
     dp.include_router(admin_stickers.router)
     dp.include_router(admin_memories.router)
     dp.include_router(admin_metrics.router)
-
-    # Messages and callbacks
     dp.include_router(callbacks.router)
-    dp.include_router(messages.router)  # Messages router should be last
+    dp.include_router(messages.router)
 
-    # Inject dependencies into all routers
     for key, value in deps.items():
         dp[key] = value
 
-    logger.info("All handlers registered")
+    log.info("handlers.registered")
 
 
 async def main():
     """Main function."""
-    logger.info("Starting MineBridge bot...")
+    log.info("bot.starting")
 
-    # Initialize container
     container = Container()
-
-    # Register handlers
     register_handlers(container)
-
-    # Startup
     await on_startup(container)
 
     try:
-        # Start polling
         await container.dispatcher.start_polling(container.bot)
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        log.info("bot.stopped_by_user")
     except Exception as e:
-        logger.exception(f"Fatal error: {e}")
+        log.exception("bot.fatal_error", error=str(e))
     finally:
         await on_shutdown(container)
 
 
 if __name__ == "__main__":
     try:
-        # Set signal handlers
         signal.signal(signal.SIGTERM, _handle_signal)
         signal.signal(signal.SIGINT, _handle_signal)
-
-        # Set the global shutdown event
         _shutdown_event = asyncio.Event()
-
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Shutdown complete")
+        log.info("bot.shutdown_complete")

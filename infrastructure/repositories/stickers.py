@@ -1,8 +1,9 @@
 """Stickers repository."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Dict, Optional
 
 import msgspec.json as mjson
 
@@ -14,7 +15,7 @@ class StickersRepository:
 
     def __init__(self, stickers_file: Path):
         self.stickers_file = stickers_file
-        self._stickers: Dict[str, str] = {}
+        self._stickers: dict[str, str] = {}
         self._load_stickers()
 
     def _load_stickers(self) -> None:
@@ -38,11 +39,11 @@ class StickersRepository:
         except Exception:
             logger.exception("Failed to save stickers")
 
-    def get_sticker(self, name: str) -> Optional[str]:
+    def get_sticker(self, name: str) -> str | None:
         """Get sticker file_id by name (case-insensitive)."""
         return self._stickers.get(name.lower())
 
-    def find_by_name(self, name: str) -> Optional[str]:
+    def find_by_name(self, name: str) -> str | None:
         """Find sticker name by searching case-insensitively.
 
         Returns:
@@ -54,7 +55,7 @@ class StickersRepository:
                 return sticker_name
         return None
 
-    def find_by_file_id(self, file_id: str) -> Optional[str]:
+    def find_by_file_id(self, file_id: str) -> str | None:
         """Find sticker name by file_id.
 
         Returns:
@@ -94,7 +95,7 @@ class StickersRepository:
 
         return previous_row[-1]
 
-    def get_sticker_fuzzy(self, name: str) -> tuple[Optional[str], Optional[str], float]:
+    def get_sticker_fuzzy(self, name: str) -> tuple[str | None, str | None, float]:
         """Get sticker by name with fuzzy matching using Levenshtein distance.
 
         First tries exact match (case-insensitive), then finds most similar sticker
@@ -154,8 +155,8 @@ class StickersRepository:
             dict with:
                 - success: bool
                 - message: str (error/success message)
-                - duplicate_type: Optional[str] ('name' or 'file_id')
-                - existing_name: Optional[str] (name of existing sticker)
+                - duplicate_type: str | None ('name' or 'file_id')
+                - existing_name: str | None (name of existing sticker)
         """
         # Check for duplicate by name (case-insensitive)
         existing_name = self.find_by_name(name)
@@ -299,7 +300,7 @@ class StickersRepository:
             return True
         return False
 
-    def get_all_stickers(self) -> Dict[str, str]:
+    def get_all_stickers(self) -> dict[str, str]:
         """Get all stickers."""
         return self._stickers.copy()
 

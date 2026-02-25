@@ -1,5 +1,7 @@
 """Dependency Injection container."""
 
+from __future__ import annotations
+
 from application.services.ai import AIService
 from application.services.game import GameService
 from application.services.media import MediaService

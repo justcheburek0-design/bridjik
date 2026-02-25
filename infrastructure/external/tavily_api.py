@@ -1,7 +1,9 @@
 """Tavily API client for web search."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
 
@@ -27,7 +29,7 @@ class TavilyAPI:
         search_depth: str = "basic",
         include_answer: bool = True,
         include_raw_content: bool = False,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Perform web search using Tavily API.
 
         Args:
@@ -74,7 +76,7 @@ class TavilyAPI:
             logger.exception(f"Unexpected error in Tavily search: {str(e)}")
             return None
 
-    def format_results(self, search_data: Dict[str, Any]) -> str:
+    def format_results(self, search_data: dict[str, Any]) -> str:
         """Format search results for AI consumption.
 
         Args:

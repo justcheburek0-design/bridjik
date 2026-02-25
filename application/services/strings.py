@@ -1,8 +1,9 @@
 """Strings and system prompts service."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Dict, Tuple
 
 from aiogram import types
 from aiogram.enums import ChatType
@@ -17,7 +18,7 @@ class StringsService:
 
     def __init__(self, config: Config):
         self.config = config
-        self._prompt_cache: Dict[str, Tuple[float, str]] = {}
+        self._prompt_cache: Dict[str, tuple[float, str]] = {}
 
     def _read_txt_prompt(self, path: Path) -> str:
         """Cache-aware reader for prompt override files stored on disk."""

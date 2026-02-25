@@ -1,8 +1,9 @@
 """Guessing game repository implementation."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Dict, Optional
 
 import msgspec.json as mjson
 
@@ -14,7 +15,7 @@ class GuessesRepository(IGuessesRepository):
 
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self._guesses: Dict[str, str] = {}
+        self._guesses: dict[str, str] = {}
         self._load()
 
     def _chat_key(self, chat_id: int) -> str:
@@ -60,7 +61,7 @@ class GuessesRepository(IGuessesRepository):
         self._guesses[self._chat_key(chat_id)] = (obj or "").strip()
         self._save()
 
-    def get_guess(self, chat_id: int) -> Optional[str]:
+    def get_guess(self, chat_id: int) -> str | None:
         """Get guessed object for chat."""
         return self._guesses.get(self._chat_key(chat_id))
 

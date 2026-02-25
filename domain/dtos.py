@@ -1,48 +1,35 @@
-from dataclasses import dataclass
-from typing import Optional
+from __future__ import annotations
 
+import msgspec
 from aiogram import types
 
 
-@dataclass
-class IncomingMessageDTO:
+class IncomingMessageDTO(msgspec.Struct):
     """Data Transfer Object for incoming Telegram messages."""
 
-    # Raw Telegram objects
     original_message: types.Message
     chat_id: int
-    user_id: Optional[int]
-
-    # Extracted data
+    user_id: int | None
     text: str
     author_name: str
     is_bot: bool
     chat_type: str
-
-    # Media flags
     has_image: bool
     has_voice: bool
-
-    # Media content (populated by MediaService if needed, or extracted early)
-    # Ideally, we pass the raw message to MediaService to download,
-    # but for decision making in AIService, we might just need flags.
-    # We'll store potential media attributes here.
-    image_bytes: Optional[bytes] = None
-    mime_type: Optional[str] = None
+    image_bytes: bytes | None = None
+    mime_type: str | None = None
 
     @classmethod
-    def from_telegram(cls, message: types.Message) -> "IncomingMessageDTO":
+    def from_telegram(cls, message: types.Message) -> IncomingMessageDTO:
         """Factory method to create DTO from Telegram message."""
         text = (message.text or message.caption or "").strip()
 
-        # Check for media presence
         has_photo = bool(message.photo)
         has_document = bool(message.document)
         has_sticker = bool(message.sticker)
         has_animation = bool(message.animation)
         has_voice = bool(message.voice)
 
-        # Basic check for image-like document
         if has_document and message.document.mime_type:
             if message.document.mime_type.startswith("image/"):
                 has_photo = True

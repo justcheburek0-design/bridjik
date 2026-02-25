@@ -1,7 +1,8 @@
-﻿"""Message handlers."""
+from __future__ import annotations
+
+"""Message handlers."""
 
 import logging
-from typing import Optional
 
 from aiogram import Router, types
 
@@ -39,8 +40,8 @@ def _save_incoming_message(
     chat_logs_repo: IChatLogsRepository,
     message: types.Message,
     text: str,
-    image_bytes: Optional[bytes] = None,
-    mime_type: Optional[str] = None,
+    image_bytes: bytes | None = None,
+    mime_type: str | None = None,
 ) -> None:
     """Save incoming message to chat logs."""
     chat_id = message.chat.id

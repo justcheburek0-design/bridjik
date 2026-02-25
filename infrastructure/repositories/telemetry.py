@@ -1,9 +1,11 @@
 """Telemetry repository for tracking AI usage metrics."""
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import msgspec.json as mjson
 
@@ -15,7 +17,7 @@ class TelemetryRepository:
 
     def __init__(self, telemetry_file: Path):
         self.telemetry_file = telemetry_file
-        self._metrics: List[Dict[str, Any]] = []
+        self._metrics: List[dict[str, Any]] = []
         self._load_telemetry()
 
     def _load_telemetry(self) -> None:
@@ -48,10 +50,10 @@ class TelemetryRepository:
         tokens_output: int,
         tokens_cached: int = 0,
         latency_ms: int = 0,
-        tool_calls: Optional[List[str]] = None,
-        error: Optional[str] = None,
+        tool_calls: list[str] | None = None,
+        error: str | None = None,
         retries: int = 0,
-        cost_usd: Optional[float] = None,
+        cost_usd: float | None = None,
     ) -> None:
         """Record a telemetry event for an AI request.
 
@@ -162,7 +164,7 @@ class TelemetryRepository:
 
     def get_top_offenders(
         self, limit: int = 10, hours: int = 3, by: str = "tokens"
-    ) -> List[Dict[str, Any]]:
+    ) -> List[dict[str, Any]]:
         """Get top users by token usage or cost.
 
         Args:
@@ -176,7 +178,7 @@ class TelemetryRepository:
         windowed = self._filter_by_window(self._metrics, hours)
 
         # Aggregate by user
-        user_stats: Dict[int, Dict[str, Any]] = {}
+        user_stats: dict[int, dict[str, Any]] = {}
         for metric in windowed:
             user_id = metric.get("user_id")
             if user_id is None:
@@ -200,7 +202,7 @@ class TelemetryRepository:
 
         return sorted_users[:limit]
 
-    def get_model_stats(self, hours: int = 3) -> List[Dict[str, Any]]:
+    def get_model_stats(self, hours: int = 3) -> List[dict[str, Any]]:
         """Get statistics grouped by model.
 
         Args:
@@ -212,7 +214,7 @@ class TelemetryRepository:
         windowed = self._filter_by_window(self._metrics, hours)
 
         # Aggregate by model
-        model_stats: Dict[str, Dict[str, Any]] = {}
+        model_stats: Dict[str, dict[str, Any]] = {}
         for metric in windowed:
             model = metric.get("model", "unknown")
 
@@ -240,7 +242,7 @@ class TelemetryRepository:
 
         return sorted_models
 
-    def get_overall_stats(self, hours: int = 3) -> Dict[str, Any]:
+    def get_overall_stats(self, hours: int = 3) -> dict[str, Any]:
         """Get overall statistics for the time window.
 
         Args:
@@ -278,7 +280,7 @@ class TelemetryRepository:
             "avg_latency_ms": int(total_latency / total_requests) if total_requests > 0 else 0,
         }
 
-    def get_all_metrics(self) -> List[Dict[str, Any]]:
+    def get_all_metrics(self) -> List[dict[str, Any]]:
         """Get all telemetry metrics for export.
 
         Returns:

@@ -1,8 +1,10 @@
 """MineBridge API client."""
 
+from __future__ import annotations
+
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import quote_plus
 
 import httpx
@@ -16,7 +18,7 @@ class MineBridgeAPI:
     def __init__(self, host: str, cache_ttl: float = 20.0):
         self.host = host
         self.cache_ttl = cache_ttl
-        self._cache: Dict[str, tuple[float, Optional[Dict[str, Any]]]] = {}
+        self._cache: Dict[str, tuple[float, dict[str, Any] | None]] = {}
 
     def _make_punycode_host(self, host: str) -> str:
         """Convert domain with non-ASCII to punycode for HTTP requests."""
@@ -25,7 +27,7 @@ class MineBridgeAPI:
         except Exception:
             return host
 
-    def _get_cache(self, key: str) -> Optional[Dict[str, Any]]:
+    def _get_cache(self, key: str) -> dict[str, Any] | None:
         """Get value from cache if not expired."""
         row = self._cache.get(key)
         if not row:
@@ -39,11 +41,11 @@ class MineBridgeAPI:
             return None
         return val
 
-    def _set_cache(self, key: str, val: Optional[Dict[str, Any]]) -> None:
+    def _set_cache(self, key: str, val: dict[str, Any] | None) -> None:
         """Store API response in cache with current timestamp."""
         self._cache[key] = (time.time(), val)
 
-    async def _fetch_json_from_api(self, player_id: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_json_from_api(self, player_id: str) -> dict[str, Any] | None:
         """Fetch player data from MineBridge API."""
         if not player_id:
             return None
@@ -72,7 +74,7 @@ class MineBridgeAPI:
 
     async def fetch_player_by_id(
         self, player_id: str, use_cache: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch player information by ID."""
         if not player_id:
             return None
@@ -91,7 +93,7 @@ class MineBridgeAPI:
 
     async def fetch_player_by_nickname(
         self, nickname: str, use_cache: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch player information by nickname."""
         if not nickname:
             return None
@@ -129,8 +131,8 @@ class MineBridgeAPI:
             return None
 
     async def _process_player_data(
-        self, player_data: Dict[str, Any], cache_key: str, use_cache: bool
-    ) -> Optional[Dict[str, Any]]:
+        self, player_data: dict[str, Any], cache_key: str, use_cache: bool
+    ) -> dict[str, Any] | None:
         """Process raw player data and cache it."""
         urls_start = {
             "vk": {"url": "https://vk.com/", "label": "ВК"},
@@ -168,7 +170,7 @@ class MineBridgeAPI:
             logger.exception("mb_api: unexpected error processing data")
             return None
 
-    async def search_player(self, query: str) -> Optional[Dict[str, Any]]:
+    async def search_player(self, query: str) -> dict[str, Any] | None:
         """Search player by ID or nickname."""
         if not query:
             return None
@@ -184,7 +186,7 @@ class MineBridgeAPI:
         # Try as nickname
         return await self.fetch_player_by_nickname(query)
 
-    async def fetch_events(self, season: int = -1) -> Optional[Dict[str, Any]]:
+    async def fetch_events(self, season: int = -1) -> dict[str, Any] | None:
         """Fetch events for a specific season.
 
         Args:
@@ -205,7 +207,7 @@ class MineBridgeAPI:
             logger.exception("mb_api: failed to fetch events for season %s", season)
             return None
 
-    async def fetch_top_players(self, limit: int = 5, offset: int = 0) -> Optional[Dict[str, Any]]:
+    async def fetch_top_players(self, limit: int = 5, offset: int = 0) -> dict[str, Any] | None:
         """Fetch top players with pagination.
 
         Args:

@@ -4,7 +4,9 @@
 ID, строк, атрибутов объектов и контекста сообщений.
 """
 
-from typing import Any, Optional
+from __future__ import annotations
+
+from typing import Any
 
 
 def is_valid_id(value: Any) -> bool:
@@ -27,7 +29,7 @@ def is_valid_id(value: Any) -> bool:
     return isinstance(value, int) and value > 0
 
 
-def is_valid_string(value: Any, min_length: int = 0, max_length: Optional[int] = None) -> bool:
+def is_valid_string(value: Any, min_length: int = 0, max_length: int | None = None) -> bool:
     """Проверяет, является ли значение валидной непустой строкой.
 
     Args:
@@ -60,7 +62,7 @@ def is_valid_string(value: Any, min_length: int = 0, max_length: Optional[int] =
     return True
 
 
-def normalize_string(value: str, max_length: Optional[int] = None) -> str:
+def normalize_string(value: str, max_length: int | None = None) -> str:
     """Нормализует строковое значение (trim и обрезка по длине).
 
     Удаляет пробелы с обеих сторон и обрезает строку до максимальной длины.
@@ -120,7 +122,7 @@ def safe_get_attr(obj: Any, attr_name: str, default: Any = None) -> Any:
 
 
 def validate_message_context(
-    prompt: str, has_image: bool = False, image_bytes: Optional[bytes] = None
+    prompt: str, has_image: bool = False, image_bytes: bytes | None = None
 ) -> bool:
     """Валидирует контекст сообщения для AI completion.
 

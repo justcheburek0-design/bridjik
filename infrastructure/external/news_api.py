@@ -1,8 +1,10 @@
 """News API client."""
 
+from __future__ import annotations
+
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -15,9 +17,9 @@ class NewsAPI:
     def __init__(self, host: str = "news.m-br.ru", cache_ttl: float = 60.0):
         self.host = host
         self.cache_ttl = cache_ttl
-        self._cache: Dict[str, tuple[float, Optional[List[Dict[str, Any]]]]] = {}
+        self._cache: Dict[str, tuple[float, Optional[List[dict[str, Any]]]]] = {}
 
-    def _get_cache(self, key: str) -> Optional[List[Dict[str, Any]]]:
+    def _get_cache(self, key: str) -> Optional[List[dict[str, Any]]]:
         """Get value from cache if not expired."""
         row = self._cache.get(key)
         if not row:
@@ -31,13 +33,13 @@ class NewsAPI:
             return None
         return val
 
-    def _set_cache(self, key: str, val: Optional[List[Dict[str, Any]]]) -> None:
+    def _set_cache(self, key: str, val: Optional[List[dict[str, Any]]]) -> None:
         """Store API response in cache with current timestamp."""
         self._cache[key] = (time.time(), val)
 
     async def fetch_news(
         self, limit: int = 5, offset: int = 0, use_cache: bool = True
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[List[dict[str, Any]]]:
         """Fetch news from News API.
 
         Args:

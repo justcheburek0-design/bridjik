@@ -1,5 +1,7 @@
 """Custom exceptions for the bot."""
 
+from __future__ import annotations
+
 
 class BotError(Exception):
     """Base exception for bot errors."""

@@ -1,8 +1,10 @@
 """Base repository for JSON-based storage."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 import msgspec.json as mjson
 
@@ -20,13 +22,8 @@ class BaseJSONRepository(Generic[T]):
     """
 
     def __init__(self, file_path: Path):
-        """Initialize repository.
-
-        Args:
-            file_path: Path to JSON file
-        """
         self.file_path = file_path
-        self._data: Dict[str, T] = {}
+        self._data: dict[str, T] = {}
         self._load()
 
     def _load(self) -> None:
@@ -57,68 +54,26 @@ class BaseJSONRepository(Generic[T]):
         handle_file_operation(save_operation, f"Saving {self.file_path.name}")
 
     def _transform_key(self, key: Any) -> str:
-        """Transform key to string format for storage.
-
-        Args:
-            key: Key to transform
-
-        Returns:
-            String representation of key
-        """
         return str(key)
 
-    def _parse_key(self, key: str) -> Optional[Any]:
-        """Parse key from string format.
-
-        Args:
-            key: String key
-
-        Returns:
-            Parsed key or None if invalid
-        """
+    def _parse_key(self, key: str) -> Any | None:
         try:
             return key
         except Exception:
             return None
 
-    def get(self, key: Any) -> Optional[T]:
-        """Get value by key.
-
-        Args:
-            key: Key to get value for
-
-        Returns:
-            Value or None if not found
-        """
-        str_key = self._transform_key(key)
-        return self._data.get(str_key)
+    def get(self, key: Any) -> T | None:
+        return self._data.get(self._transform_key(key))
 
     def set(self, key: Any, value: T) -> None:
-        """Set value by key.
-
-        Args:
-            key: Key to set value for
-            value: Value to set
-        """
-        str_key = self._transform_key(key)
-        self._data[str_key] = value
+        self._data[self._transform_key(key)] = value
         self._save()
 
     def delete(self, key: Any) -> None:
-        """Delete value by key.
-
-        Args:
-            key: Key to delete
-        """
         str_key = self._transform_key(key)
         if str_key in self._data:
             del self._data[str_key]
             self._save()
 
-    def get_all(self) -> Dict[str, T]:
-        """Get all data.
-
-        Returns:
-            Dictionary with all data
-        """
+    def get_all(self) -> dict[str, T]:
         return self._data.copy()

@@ -1,14 +1,16 @@
 """Text formatters."""
 
+from __future__ import annotations
+
 from html import escape
-from typing import Any, Dict
+from typing import Any
 
 
 class Formatter:
     """Text formatter for bot responses."""
 
     @staticmethod
-    def format_player_info(info: Dict[str, Any]) -> str:
+    def format_player_info(info: dict[str, Any]) -> str:
         """Format MineBridge player profile as safe Telegram HTML."""
         lines = []
 

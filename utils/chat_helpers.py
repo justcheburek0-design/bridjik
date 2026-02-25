@@ -1,6 +1,6 @@
 """Chat helper utilities."""
 
-from typing import Optional
+from __future__ import annotations
 
 from aiogram import types
 
@@ -21,7 +21,7 @@ def get_author_name(message: types.Message, fallback: str = "unknown") -> str:
     return message.from_user.username or message.from_user.first_name or fallback
 
 
-def get_message_id(message: types.Message) -> Optional[int]:
+def get_message_id(message: types.Message) -> int | None:
     """Safely get message ID.
 
     Args:

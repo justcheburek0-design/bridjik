@@ -1,9 +1,10 @@
 """Psevdonyms repository implementation."""
 
+from __future__ import annotations
+
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Optional
 
 import msgspec.json as mjson
 
@@ -15,7 +16,7 @@ class PsevdoRepository(IPsevdoRepository):
 
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self._psevdos: Dict[int, str] = {}
+        self._psevdos: dict[int, str] = {}
         self._load()
 
     def _load(self) -> None:
@@ -52,6 +53,6 @@ class PsevdoRepository(IPsevdoRepository):
         self._save()
         return name
 
-    def get_psevdo(self, user_id: int) -> Optional[str]:
+    def get_psevdo(self, user_id: int) -> str | None:
         """Get user psevdonym."""
         return self._psevdos.get(user_id)

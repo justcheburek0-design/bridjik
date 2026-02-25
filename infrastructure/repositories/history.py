@@ -1,14 +1,15 @@
 """History repository implementation."""
 
-import base64
+from __future__ import annotations
+
 import logging
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Tuple
 
 import msgspec.json as mjson
 
 from domain.interfaces import IHistoryRepository
+from utils.media import make_data_url
 from utils.text import shorten
 
 
@@ -27,14 +28,14 @@ class HistoryRepository(IHistoryRepository):
     def __init__(self, file_path: Path, max_messages: int = 15):
         self.file_path = file_path
         self.max_messages = max_messages
-        self._history: Dict[str, Deque[dict]] = defaultdict(lambda: deque(maxlen=max_messages))
+        self._history: dict[str, deque[dict]] = defaultdict(lambda: deque(maxlen=max_messages))
         self._load()
 
     def _make_key(self, chat_id: int, user_id: int) -> str:
         """Create storage key from chat_id and user_id."""
         return f"{chat_id}:{user_id}"
 
-    def _parse_key(self, key: str) -> Optional[Tuple[int, int]]:
+    def _parse_key(self, key: str) -> tuple[int, int] | None:
         """Parse storage key to chat_id and user_id."""
         try:
             chat, user = key.split(":", 1)
@@ -55,7 +56,7 @@ class HistoryRepository(IHistoryRepository):
                 if not parsed_key:
                     continue
 
-                dq: Deque[dict] = deque(maxlen=self.max_messages)
+                dq: deque[dict] = deque(maxlen=self.max_messages)
                 for row in items:
                     try:
                         if isinstance(row, dict) and "role" in row and "content" in row:
@@ -74,7 +75,7 @@ class HistoryRepository(IHistoryRepository):
     def _save(self) -> None:
         """Save history to JSON file."""
         try:
-            out: Dict[str, list] = {}
+            out: dict[str, list] = {}
             for key, dq in self._history.items():
                 out[key] = list(dq)
 
@@ -94,14 +95,12 @@ class HistoryRepository(IHistoryRepository):
     ) -> None:
         """Add user message with image to history in multimodal format."""
         key = self._make_key(chat_id, user_id)
-        content: List[dict] = []
+        content: list[dict] = []
 
-        # Add text part (include media description)
         if text:
             content.append({"type": "text", "text": shorten(text)})
 
-        # Add image part
-        data_url = self._make_data_url(image_bytes, mime_type)
+        data_url = make_data_url(image_bytes, mime_type)
         content.append({"type": "image_url", "image_url": {"url": data_url}})
 
         self._history[key].append({"role": "user", "content": content})
@@ -119,36 +118,18 @@ class HistoryRepository(IHistoryRepository):
     ) -> None:
         """Add assistant message with image to history in multimodal format."""
         key = self._make_key(chat_id, user_id)
-        content: List[dict] = []
+        content: list[dict] = []
 
-        # Add text part
         if text:
             content.append({"type": "text", "text": shorten(text)})
 
-        # Add image part
-        data_url = self._make_data_url(image_bytes, mime_type)
+        data_url = make_data_url(image_bytes, mime_type)
         content.append({"type": "image_url", "image_url": {"url": data_url}})
 
         self._history[key].append({"role": "assistant", "content": content})
         self._save()
 
-    def get_history(self, chat_id: int, user_id: int) -> List[dict]:
+    def get_history(self, chat_id: int, user_id: int) -> list[dict]:
         """Get conversation history as a list of OpenAI-compatible message dicts."""
         key = self._make_key(chat_id, user_id)
         return list(self._history.get(key, deque()))
-
-    def _make_data_url(self, image_bytes: bytes, mime_type: Optional[str] = None) -> str:
-        """Create data URL for image in base64 format.
-
-        Args:
-            image_bytes: Image data
-            mime_type: MIME type (e.g., 'image/jpeg', 'image/png')
-
-        Returns:
-            Data URL string (e.g., 'data:image/jpeg;base64,/9j/4AAQ...')
-        """
-        mt = (mime_type or "image/jpeg").strip().lower()
-        if not mt.startswith("image/"):
-            mt = f"image/{mt}" if "/" not in mt else mt
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        return f"data:{mt};base64,{b64}"
