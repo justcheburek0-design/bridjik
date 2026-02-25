@@ -53,6 +53,8 @@ class IChatLogsRepository(Protocol):
 
     def get_message_by_id(self, chat_id: int, message_id: int) -> tuple[str, bool, str] | None: ...
 
+    def get_file_id_by_message_id(self, chat_id: int, message_id: int) -> str | None: ...
+
 
 @runtime_checkable
 class IMemoryRepository(Protocol):

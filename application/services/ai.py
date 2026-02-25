@@ -5,19 +5,20 @@ from __future__ import annotations
 import re
 import time
 from contextlib import suppress
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-import msgspec.json as mjson
 import structlog
 from aiogram import types
 from cachetools import TTLCache
-from openai import APIError, AsyncOpenAI, RateLimitError
-from tenacity import retry, retry_if_exception_type, wait_exponential
+from openai import AsyncOpenAI
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 from application.services.ai_prompt_builder import AIPromptBuilderMixin
-from application.services.ai_tools import AIToolsMixin, ToolResult
+from application.services.ai_tools import register_tools
 from application.services.ai_tts import AITTSMixin
 from core.config import Config
 from domain.dtos import IncomingMessageDTO
@@ -30,29 +31,6 @@ from utils.html_edit import remove as remove_html
 log = structlog.get_logger(__name__)
 
 DEFAULT_ERROR_MESSAGE = "Произошла ошибка при обращении к AI. Попробуйте позже."
-
-
-@dataclass
-class _TokenUsage:
-    input: int = 0
-    output: int = 0
-    cached: int = 0
-    cost: float = 0.0
-
-    def add(self, response: Any) -> None:
-        usage = getattr(response, "usage", None)
-        if not usage:
-            return
-        self.input += usage.prompt_tokens or 0
-        self.output += usage.completion_tokens or 0
-        details = getattr(usage, "prompt_tokens_details", None)
-        if details:
-            self.cached += getattr(details, "cached_tokens", 0) or 0
-        if getattr(usage, "cost", None):
-            self.cost += float(usage.cost)
-
-
-TEMPERATURE = 1
 
 BOT_ADDRESS_RE = re.compile(
     r"(?i)(?<!\w)(?:нейро-?бот(?:ик|яра)?|бот(?:ик|яра)?|бридж(?:ик)?)(?!\w)"
@@ -73,52 +51,102 @@ NOISE_RE = re.compile(r"^\s*(?:[^\w\s]|[\w]{1,2})\s*$")
 
 @dataclass
 class AIServiceDeps:
-    """All external dependencies for AIService."""
+    """Runtime dependencies injected into every agent tool call."""
 
-    client: AsyncOpenAI
-    history_repo: IHistoryRepository
-    chat_logs_repo: IChatLogsRepository
-    model: str
     mb_api: MineBridgeAPI
     mc_api: MinecraftAPI
     news_api: Any
     tavily_api: Any
-    config: Config
     stickers_repo: Any
     memory_repo: Any
-    rag_service: Any
-    telemetry_repo: Any
+    chat_logs_repo: IChatLogsRepository
+    config: Config
+
+    # Mutable per-request state (reset in AIService.complete)
+    memory_updates: list[str] = field(default_factory=list)
+    current_message: types.Message | None = field(default=None, repr=False)
+
+    def require_message_context(self) -> tuple[int, int] | str:
+        if not self.current_message:
+            return "Error: Available only in message context"
+        return self.current_message.chat.id, self.current_message.from_user.id
+
+    def find_sticker_file_id(self, msg_id: int) -> str | None:
+        msg = self.current_message
+        if not msg:
+            return None
+        if msg.message_id == msg_id and getattr(msg, "sticker", None):
+            return msg.sticker.file_id
+
+        chat_id = msg.chat.id
+        file_id = self.chat_logs_repo.get_file_id_by_message_id(chat_id, msg_id)
+        if file_id:
+            return file_id
+
+        for offset in (-1, 1, -2, 2):
+            file_id = self.chat_logs_repo.get_file_id_by_message_id(chat_id, msg_id + offset)
+            if file_id:
+                log.info("sticker.found_nearby", msg_id=msg_id, nearby_id=msg_id + offset)
+                return file_id
+
+        reply = getattr(msg, "reply_to_message", None)
+        if reply and getattr(reply, "sticker", None) and reply.message_id == msg_id:
+            return reply.sticker.file_id
+        return None
 
 
-class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
-    """Service for AI completions."""
+class AIService(AIPromptBuilderMixin, AITTSMixin):
+    """Service for AI completions powered by pydantic-ai."""
 
-    def __init__(self, deps: AIServiceDeps):
-        self.__dict__.update(vars(deps))
-
-        self._memory_updates: list = []
-        self._pending_reactions: list[tuple[str, str]] = []
-        self._current_request_start_time = 0
-        self._current_request_tool_calls: list = []
-        self._current_user_id: int | None = None
-
-        self._tools_raw: list = self._load_tools_raw()
-        self._tools_skip_flags: dict[str, bool] = {
-            t["function"]["name"]: t.get("skip_next_call", False)
-            for t in self._tools_raw
-            if "function" in t and "name" in t["function"]
-        }
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        history_repo: IHistoryRepository,
+        chat_logs_repo: IChatLogsRepository,
+        model: str,
+        mb_api: MineBridgeAPI,
+        mc_api: MinecraftAPI,
+        news_api: Any,
+        tavily_api: Any,
+        config: Config,
+        stickers_repo: Any,
+        memory_repo: Any,
+        rag_service: Any,
+        telemetry_repo: Any,
+    ):
+        self.history_repo = history_repo
+        self.chat_logs_repo = chat_logs_repo
+        self.model = model
+        self.config = config
+        self.stickers_repo = stickers_repo
+        self.memory_repo = memory_repo
+        self.rag_service = rag_service
+        self.telemetry_repo = telemetry_repo
 
         self._stickers_cache: TTLCache = TTLCache(maxsize=1, ttl=60)
-        self._tool_handlers: dict[str, Callable] = self._build_tool_handlers()
 
-    def _load_tools_raw(self) -> list:
-        """Load tools.json once at init."""
-        try:
-            return mjson.decode(Path(self.config.TOOLS_FILE).read_bytes())
-        except Exception as e:
-            log.error("tools.load_failed", error=str(e))
-            return []
+        # Runtime deps shared with tools
+        self._deps = AIServiceDeps(
+            mb_api=mb_api,
+            mc_api=mc_api,
+            news_api=news_api,
+            tavily_api=tavily_api,
+            stickers_repo=stickers_repo,
+            memory_repo=memory_repo,
+            chat_logs_repo=chat_logs_repo,
+            config=config,
+        )
+
+        openai_model = OpenAIChatModel(
+            model,
+            provider=OpenAIProvider(openai_client=client),
+        )
+        self._agent: Agent[AIServiceDeps, str] = Agent(
+            openai_model,
+            output_type=str,
+            deps_type=AIServiceDeps,
+        )
+        register_tools(self._agent)
 
     # -------------------------------------------------------------------------
     # Public API
@@ -167,7 +195,7 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
         system_prompt: str,
         message: types.Message | None = None,
         on_tool_update: Callable[[str], Awaitable[None]] | None = None,
-    ) -> tuple[str, list[str]]:
+    ) -> tuple[str, list[str], list[tuple[str, str]]]:
         """Generate AI completion for given context."""
         req_log = log.bind(
             user_id=context.user.id if context.user else None,
@@ -175,124 +203,118 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
             model=self.model,
         )
 
-        self._current_message = message
-        self._current_user_id = context.user.id if context.user else None
-        self._current_chat = context.chat
-        self._memory_updates = []
-        self._current_request_tool_calls = []
+        self._deps.current_message = message
+        self._deps.memory_updates = []
+        pending_reactions: list[tuple[str, str]] = []
 
         overall_start = time.time()
-        usage = _TokenUsage()
         telemetry_error: str | None = None
+        usage = None
 
-        messages = self._build_messages(system_prompt, context, message)
-        tools = self._get_tools()
+        full_system_prompt = self._build_system_prompt(system_prompt, context)
+        history = self._build_message_history(context, message)
 
         try:
-            for _ in range(10):
-                response = await self._call_openai(messages, tools)
-                response_message = response.choices[0].message
-                usage.add(response)
+            result = await self._agent.run(
+                context.prompt,
+                deps=self._deps,
+                message_history=history,
+                model_settings=ModelSettings(temperature=1),
+                instructions=full_system_prompt,
+            )
 
-                if response_message.content and on_tool_update:
-                    with suppress(Exception):
-                        await on_tool_update(response_message.content)
+            text = result.output or ""
+            text, pending_reactions = self._parse_reactions(text)
+            text = re.sub(r"(\]\(){2,}", "", text)
+            text = remove_html(text)
 
-                if not response_message.tool_calls:
-                    text = self._process_response(response)
-                    budget_warning = (
-                        await self._check_user_budget(context.user.id, context.chat.id)
-                        if context.user and context.user.id
-                        else None
-                    )
-                    if budget_warning:
-                        text += budget_warning
-                    return text, self._memory_updates, self._pending_reactions
+            budget_warning = (
+                await self._check_user_budget(context.user.id, context.chat.id)
+                if context.user and context.user.id
+                else None
+            )
+            if budget_warning:
+                text += budget_warning
 
-                for tc in response_message.tool_calls:
-                    self._current_request_tool_calls.append(tc.function.name)
+            usage = result.usage()
+            req_log.info(
+                "ai.complete",
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
 
-                response_dict = response_message.model_dump(exclude_none=True)
-                response_dict.pop("reasoning_details", None)
-                if "content" not in response_dict or response_dict["content"] is None:
-                    response_dict["content"] = ""
-                messages.append(response_dict)
+            return text, self._deps.memory_updates, pending_reactions
 
-                tool_results = []
-                for tool_call in response_message.tool_calls:
-                    with suppress(Exception):
-                        self.chat_logs_repo.add_message(
-                            context.chat.id,
-                            "Ассистент",
-                            True,
-                            f"🔨 Вызов инструмента: {tool_call.function.name} ({tool_call.function.arguments})",
-                        )
-
-                    tool_result = await self._execute_tool(tool_call)
-                    tool_results.append(tool_result)
-
-                    with suppress(Exception):
-                        self.chat_logs_repo.add_message(
-                            context.chat.id,
-                            "Ассистент",
-                            True,
-                            f"🔧 Результат {tool_result.name}: {tool_result.content}",
-                        )
-
-                    messages.append(
-                        {
-                            "tool_call_id": tool_result.tool_call_id,
-                            "role": tool_result.role,
-                            "name": tool_result.name,
-                            "content": tool_result.content,
-                        }
-                    )
-
-                if self._should_skip_next_call(response_message.tool_calls, tool_results):
-                    req_log.info("agentic_loop.skip_next_call")
-                    with suppress(Exception):
-                        self.chat_logs_repo.add_message(
-                            context.chat.id,
-                            "Ассистент",
-                            True,
-                            "⚡ Пропущен повторный вызов AI (оптимизация токенов)",
-                        )
-                    return (
-                        response_message.content or "",
-                        self._memory_updates,
-                        self._pending_reactions,
-                    )
-
-            telemetry_error = "Loop limit reached"
-            return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
-
-        except (RateLimitError, APIError) as e:
-            req_log.error("openai.error", error=str(e))
+        except Exception as e:
+            req_log.error("ai.error", error=str(e))
             telemetry_error = str(e)
-            return DEFAULT_ERROR_MESSAGE, self._memory_updates, []
+            return DEFAULT_ERROR_MESSAGE, self._deps.memory_updates, []
 
         finally:
             self._record_telemetry(
                 context=context,
                 overall_start=overall_start,
-                total_input_tokens=usage.input,
-                total_output_tokens=usage.output,
-                total_cached_tokens=usage.cached,
-                total_cost_credits=usage.cost,
+                usage=usage,
                 error=telemetry_error,
             )
+
+    # -------------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------------
+
+    def _build_message_history(
+        self, context: MessageContext, message: types.Message | None
+    ) -> list:
+        """Convert recent chat logs to pydantic-ai ModelMessage history."""
+        from pydantic_ai import ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+        if not message:
+            return []
+
+        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 10)
+        if not recent:
+            return []
+
+        history = []
+        first_user_found = False
+
+        for msg_data in recent:
+            message_id, author, is_bot, text, image_bytes, mime_type, file_id, reactions = msg_data
+
+            if not text:
+                continue
+            if text.startswith("🔄 Бот перезагружен"):
+                is_bot = True
+
+            if not first_user_found:
+                if is_bot:
+                    continue
+                first_user_found = True
+
+            reaction_text = ""
+            if reactions:
+                all_emojis = {e for emojis in reactions.values() for e in emojis}
+                if all_emojis:
+                    reaction_text = f" [Реакции: {', '.join(sorted(all_emojis))}]"
+
+            full_text = text + reaction_text
+
+            if is_bot:
+                history.append(ModelResponse(parts=[TextPart(content=full_text)]))
+            else:
+                history.append(
+                    ModelRequest(parts=[UserPromptPart(content=f"{author}: {full_text}")])
+                )
+
+        return history
 
     def _record_telemetry(
         self,
         context: MessageContext,
         overall_start: float,
-        total_input_tokens: int,
-        total_output_tokens: int,
-        total_cached_tokens: int,
-        total_cost_credits: float,
+        usage: Any = None,
         error: str | None = None,
     ) -> None:
-        """Record telemetry for a completed request."""
         if not (context.user and context.user.id):
             return
         with suppress(Exception):
@@ -300,67 +322,13 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
                 user_id=context.user.id,
                 chat_id=context.chat.id,
                 model=self.model,
-                tokens_input=total_input_tokens,
-                tokens_output=total_output_tokens,
-                tokens_cached=total_cached_tokens,
+                tokens_input=usage.input_tokens if usage else 0,
+                tokens_output=usage.output_tokens if usage else 0,
                 latency_ms=int((time.time() - overall_start) * 1000),
-                tool_calls=list(self._current_request_tool_calls),
-                cost_usd=total_cost_credits,
                 error=error,
             )
 
-    # -------------------------------------------------------------------------
-    # OpenAI call
-    # -------------------------------------------------------------------------
-
-    @retry(
-        retry=retry_if_exception_type(RateLimitError),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
-    )
-    async def _call_openai(self, messages: list[dict], tools: list[dict] | None = None) -> Any:
-        """Call OpenAI API with automatic retry on rate limit."""
-        try:
-            last_msgs = messages[-3:] if len(messages) > 3 else messages
-            log.debug(
-                "openai.request",
-                msg_count=len(messages),
-                last_msgs=mjson.encode(last_msgs).decode(),
-            )
-        except Exception:
-            pass
-
-        kwargs: dict = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": TEMPERATURE,
-        }
-        if self._current_user_id:
-            chat = getattr(self, "_current_chat", None)
-            if chat and chat.type == "private":
-                kwargs["user"] = f"user_{self._current_user_id}"
-            else:
-                chat_id = chat.id if chat else self._current_user_id
-                kwargs["user"] = f"chat_{chat_id}"
-        if tools:
-            kwargs["tools"] = tools
-
-        return await self.client.chat.completions.create(**kwargs)
-
-    def _process_response(self, response: Any) -> str:
-        """Process OpenAI API response."""
-        message = response.choices[0].message
-        text = (message.content or "").strip()
-        log.debug("openai.response", text_preview=text[:100])
-
-        text, reactions = self._parse_reactions(text)
-        self._pending_reactions = reactions
-
-        text = re.sub(r"(\]\(){2,}", "", text)
-        return remove_html(text)
-
     def _parse_reactions(self, text: str) -> tuple[str, list[tuple[str, str]]]:
-        """Parse reaction markers from AI response."""
         pattern = r"\[emoji:(.*?):(.*?)\]"
         reactions = [
             (m.group(1).strip(), m.group(2).strip())
@@ -375,7 +343,6 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
         return cleaned, reactions
 
     def _find_message_by_excerpt(self, chat_id: int, excerpt: str, limit: int = 50) -> int | None:
-        """Find message ID by text excerpt in chat history."""
         try:
             recent = self.chat_logs_repo.get_recent_messages(chat_id, limit)
             excerpt_lower = excerpt.lower()
@@ -389,9 +356,9 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
             log.exception("excerpt.search_failed", excerpt=excerpt)
             return None
 
-    async def _set_pending_reactions(self, chat_id: int, bot) -> None:
+    async def _set_pending_reactions(self, chat_id: int, bot: Any) -> None:
         """Set reactions that were parsed from AI response."""
-        if not self._pending_reactions:
+        if not hasattr(self, "_pending_reactions") or not self._pending_reactions:
             return
 
         from aiogram.types import ReactionTypeEmoji
@@ -412,7 +379,6 @@ class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
         self._pending_reactions = []
 
     async def _check_user_budget(self, user_id: int, chat_id: int) -> str | None:
-        """Check if user is approaching budget limit."""
         try:
             tokens_used = self.telemetry_repo.get_user_tokens_in_window(
                 user_id, hours=self.config.TELEMETRY_WINDOW_HOURS

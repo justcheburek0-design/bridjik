@@ -15,7 +15,7 @@ dependencies = [
   "aiogram==3.22.0",
   "httpx==0.28.1",
   # "numpy==1.26.4",  # RAG disabled - uncomment to enable
-  "openai==1.108.2",
+  "openai>=2.0",
   "python-dotenv==1.1.1",
   "nextcord==2.6.0",
   "google-generativeai==0.8.5",
@@ -30,6 +30,7 @@ dependencies = [
   "msgspec>=0.20",
   "bleach>=6.0",
   "markdown-it-py>=3.0",
+  "pydantic-ai>=0.0.49",
 ]
 
 [project.optional-dependencies]

@@ -5,6 +5,17 @@ from __future__ import annotations
 import msgspec
 
 
+class Memory(msgspec.Struct):
+    """A single memory record (chat or user scope)."""
+
+    id: str
+    content: str
+    tags: list[str] = []
+    timestamp: str = ""
+    author_id: int | None = None
+    updated_at: str | None = None
+
+
 class User(msgspec.Struct):
     """User entity."""
 
