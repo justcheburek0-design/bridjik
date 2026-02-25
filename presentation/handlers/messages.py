@@ -248,7 +248,7 @@ async def auto_reply(
             on_tool_update=update_status,
         )
 
-        if not answer:
+        if not answer and not memory_updates and not pending_reactions:
             answer = ERROR_MESSAGE
 
         answer = truncate_text(answer, config.MAX_OUTPUT_LENGTH)

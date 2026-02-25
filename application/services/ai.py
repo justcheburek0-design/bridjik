@@ -293,8 +293,9 @@ class AIService:
                         except Exception:
                             logger.exception("Failed to record telemetry")
 
-                        # Return empty response (tool results already in chat logs)
-                        return "", self._memory_updates, self._pending_reactions
+                        # Return AI content (it should contain the response as instructed in tools description)
+                        final_text = response_message.content or ""
+                        return final_text, self._memory_updates, self._pending_reactions
 
                     # Continue loop to get next response from model
                     continue
