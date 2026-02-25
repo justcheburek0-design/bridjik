@@ -23,6 +23,11 @@ dependencies = [
   "Pillow==11.2.1",
   "edge-tts==7.2.3",
   "aiohttp==3.11.11",
+  "pydantic-settings>=2.13",
+  "tenacity>=9.0",
+  "structlog>=25.0",
+  "cachetools>=6.0",
+  "msgspec>=0.20",
 ]
 
 [project.optional-dependencies]

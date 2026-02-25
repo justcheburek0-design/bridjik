@@ -1,9 +1,10 @@
 """Stickers repository."""
 
-import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional
+
+import msgspec.json as mjson
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,7 @@ class StickersRepository:
             return
 
         try:
-            with open(self.stickers_file, "r", encoding="utf-8") as f:
-                self._stickers = json.load(f)
+            self._stickers = mjson.decode(self.stickers_file.read_bytes())
             logger.info(f"Loaded {len(self._stickers)} stickers")
         except Exception:
             logger.exception("Failed to load stickers")
@@ -34,8 +34,7 @@ class StickersRepository:
     def _save_stickers(self) -> None:
         """Save stickers to JSON file."""
         try:
-            with open(self.stickers_file, "w", encoding="utf-8") as f:
-                json.dump(self._stickers, f, ensure_ascii=False, indent=4)
+            self.stickers_file.write_bytes(mjson.format(mjson.encode(self._stickers), indent=4))
         except Exception:
             logger.exception("Failed to save stickers")
 
@@ -311,7 +310,9 @@ class StickersRepository:
     def restore_from_json(self, json_content: str) -> bool:
         """Restore stickers from JSON content. Returns True if successful."""
         try:
-            new_stickers = json.loads(json_content)
+            new_stickers = mjson.decode(
+                json_content.encode() if isinstance(json_content, str) else json_content
+            )
             if not isinstance(new_stickers, dict):
                 return False
 

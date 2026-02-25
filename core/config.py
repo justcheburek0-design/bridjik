@@ -1,145 +1,116 @@
 """Configuration management."""
 
-import os
-from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Tuple
 
-from dotenv import load_dotenv
+from pydantic import field_validator, model_validator
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from __init__ import __version__
 
-load_dotenv()
+_BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-@dataclass
-class Config:
-    """Bot configuration."""
+class Config(BaseSettings):
+    """Bot configuration loaded from environment / .env file."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # Telegram bot
-    BOT_TOKEN: str = field(default_factory=lambda: os.getenv("BOT_TOKEN", ""))
+    BOT_TOKEN: str = ""
     BOT_USERNAME: str = "minebridge52bot"
     VERSION: str = __version__
-    ADMIN_IDS: list[int] = field(
-        default_factory=lambda: [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-    )
+    ADMIN_IDS: list[int] = []
+
+    @field_validator("ADMIN_IDS", mode="before")
+    @classmethod
+    def _parse_admin_ids(cls, v: object) -> list[int]:
+        if isinstance(v, str):
+            return [int(x) for x in v.split(",") if x.strip()]
+        if isinstance(v, int):
+            return [v]
+        return list(v) if v else []
 
     # Channels and URLs
-    CHANNEL: str = field(default_factory=lambda: os.getenv("CHANNEL", "@MineBridgeOfficial"))
-    SUPPORT_URL: str = field(
-        default_factory=lambda: os.getenv("SUPPORT_URL", "https://t.me/HelpSupportMineBridgeBot")
-    )
-    DONATE_URL: str = field(
-        default_factory=lambda: os.getenv("DONATE_URL", "https://m-br.ru/shop/buy")
-    )
+    CHANNEL: str = "@MineBridgeOfficial"
+    SUPPORT_URL: str = "https://t.me/HelpSupportMineBridgeBot"
+    DONATE_URL: str = "https://m-br.ru/shop/buy"
 
     # API Keys
-    OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    OPENAI_BASE_URL: str = field(
-        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-    )
-    GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
-    # JINA_API_KEY: str = field(default_factory=lambda: os.getenv("JINA_API_KEY", ""))  # RAG disabled
-    PIXABAY_API_KEY: str = field(default_factory=lambda: os.getenv("PIXABAY_API_KEY", ""))
-    TAVILY_API_KEY: str = field(default_factory=lambda: os.getenv("TAVILY_API_KEY", ""))
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://openrouter.ai/api/v1"
+    GOOGLE_API_KEY: str = ""
+    PIXABAY_API_KEY: str = ""
+    TAVILY_API_KEY: str = ""
 
     # MineBridge API
     MB_HOST: str = "майнбридж.рф"
 
     # Minecraft server
-    MC_SERVER_HOST: str = field(default_factory=lambda: os.getenv("MC_SERVER_HOST", ""))
+    MC_SERVER_HOST: str = ""
     MC_CACHE_TTL: int = 20
-
-    # Paths
-    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).resolve().parent.parent)
-    # KB_DIR: Path = field(init=False)  # RAG disabled
-    DATA_DIR: Path = field(init=False)
-    # RAG_INDEX_DIR: Path = field(init=False)  # RAG disabled
-    PROMPTS_DIR: Path = field(init=False)
-    HISTORY_FILE: Path = field(init=False)
-    CHAT_LOGS_FILE: Path = field(init=False)
-    FREEZES_FILE: Path = field(init=False)
-    TOOLS_FILE: Path = field(init=False)
-    VOICES_DIR: Path = field(init=False)
 
     # Memory limits
     GROUP_MAX_MESSAGES: int = 25
     DM_MAX_MESSAGES: int = 15
 
-    # # RAG settings (DISABLED - uncomment to enable)
-    # RAG_CHUNK_SIZE: int = 1500
-    # RAG_CHUNK_OVERLAP: int = 150
-    # RAG_MIN_CHUNKS: int = 1  # Minimum number of chunks to return
-    # RAG_MAX_CHUNKS: int = 12  # Maximum number of chunks to return
-    # RAG_SIMILARITY_THRESHOLD: float = 0.75  # Minimum relative score (0.0-1.0) compared to top chunk
-    # RAG_EMB_MODEL: str = "jina-embeddings-v3"
-    # RAG_EMB_BATCH: int = 64
-
     # AI Models
-    AI_MODEL: str = field(default_factory=lambda: os.getenv("AI_MODEL", "x-ai/grok-4.1-fast"))
-    GEMINI_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
-    IMAGE_MODEL: str = field(
-        default_factory=lambda: os.getenv("IMAGE_MODEL", "black-forest-labs/flux.2-klein-4b")
-    )
-    TTS_URL: str = field(default_factory=lambda: os.getenv("TTS_URL", "http://127.0.0.1:8005/tts"))
-    ENABLE_TTS: bool = field(
-        default_factory=lambda: os.getenv("ENABLE_TTS", "True").lower() == "true"
-    )
-    MAX_OUTPUT_LENGTH: int = field(
-        default_factory=lambda: int(os.getenv("MAX_OUTPUT_LENGTH", "4000"))
-    )
+    AI_MODEL: str = "x-ai/grok-4.1-fast"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    IMAGE_MODEL: str = "black-forest-labs/flux.2-klein-4b"
+    TTS_URL: str = "http://127.0.0.1:8005/tts"
+    ENABLE_TTS: bool = True
+    MAX_OUTPUT_LENGTH: int = 4000
 
     # Context settings
-    AI_MULTIMODAL_CONTEXT: bool = field(
-        default_factory=lambda: os.getenv("AI_MULTIMODAL_CONTEXT", "True").lower() == "true"
-    )
+    AI_MULTIMODAL_CONTEXT: bool = True
 
     # Freeze options (hours)
-    FREEZE_OPTIONS: tuple = (1, 4, 12, 24)
-
-    # Stickers
-    STICKERS_FILE: Path = field(init=False)
-
-    # Memories
-    MEMORIES_FILE: Path = field(init=False)
+    FREEZE_OPTIONS: Tuple[int, ...] = (1, 4, 12, 24)
 
     # Telemetry
-    TELEMETRY_FILE: Path = field(init=False)
-    TELEMETRY_SOFT_LIMIT_TOKENS: int = 100_000  # 100k tokens per 3 hours
+    TELEMETRY_SOFT_LIMIT_TOKENS: int = 100_000
     TELEMETRY_WINDOW_HOURS: int = 3
 
-    def __post_init__(self):
-        """Initialize computed paths."""
-        # self.KB_DIR = self.BASE_DIR / "kb"  # RAG disabled
-        self.DATA_DIR = self.BASE_DIR / "data"
-        # self.RAG_INDEX_DIR = self.BASE_DIR / ".rag_cache"  # RAG disabled
-        self.PROMPTS_DIR = self.BASE_DIR / "prompts"
-        self.HISTORY_FILE = self.DATA_DIR / "chat_logs.json"
-        self.CHAT_LOGS_FILE = self.DATA_DIR / "chat_logs.json"
-        self.FREEZES_FILE = self.DATA_DIR / "freezes.json"
-        self.STICKERS_FILE = self.DATA_DIR / "stickers.json"
-        self.MEMORIES_FILE = self.DATA_DIR / "memories.json"
-        self.TELEMETRY_FILE = self.DATA_DIR / "telemetry.json"
-        self.VOICES_DIR = self.BASE_DIR / "voices"
-        self.TOOLS_FILE = self.BASE_DIR / "application" / "resources" / "tools.json"
+    # Computed paths (set in model_validator)
+    BASE_DIR: Path = _BASE_DIR
+    DATA_DIR: Path = _BASE_DIR / "data"
+    PROMPTS_DIR: Path = _BASE_DIR / "prompts"
+    HISTORY_FILE: Path = _BASE_DIR / "data" / "chat_logs.json"
+    CHAT_LOGS_FILE: Path = _BASE_DIR / "data" / "chat_logs.json"
+    FREEZES_FILE: Path = _BASE_DIR / "data" / "freezes.json"
+    STICKERS_FILE: Path = _BASE_DIR / "data" / "stickers.json"
+    MEMORIES_FILE: Path = _BASE_DIR / "data" / "memories.json"
+    TELEMETRY_FILE: Path = _BASE_DIR / "data" / "telemetry.json"
+    VOICES_DIR: Path = _BASE_DIR / "voices"
+    TOOLS_FILE: Path = _BASE_DIR / "application" / "resources" / "tools.json"
 
-        # Ensure data directory exists
+    @model_validator(mode="after")
+    def _ensure_dirs(self) -> "Config":
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
+        return self
 
     def validate(self) -> None:
         """Validate required configuration."""
         from core.exceptions import ConfigurationError
 
-        if not self.BOT_TOKEN:
-            raise ConfigurationError("BOT_TOKEN is required in .env")
-        if not self.OPENAI_API_KEY:
-            raise ConfigurationError("OPENAI_API_KEY is required in .env")
-        if not self.MC_SERVER_HOST:
-            raise ConfigurationError("MC_SERVER_HOST is required in .env")
-        if not self.GOOGLE_API_KEY:
-            raise ConfigurationError("GOOGLE_API_KEY is required in .env")
-        if not self.PIXABAY_API_KEY:
-            raise ConfigurationError("PIXABAY_API_KEY is required in .env")
+        checks = [
+            (self.BOT_TOKEN, "BOT_TOKEN is required in .env"),
+            (self.OPENAI_API_KEY, "OPENAI_API_KEY is required in .env"),
+            (self.MC_SERVER_HOST, "MC_SERVER_HOST is required in .env"),
+            (self.GOOGLE_API_KEY, "GOOGLE_API_KEY is required in .env"),
+            (self.PIXABAY_API_KEY, "PIXABAY_API_KEY is required in .env"),
+        ]
+        for value, msg in checks:
+            if not value:
+                raise ConfigurationError(msg)
+
         if not self.DONATE_URL.startswith("http"):
             raise ConfigurationError("DONATE_URL must be a valid URL")
         if not self.SUPPORT_URL.startswith("http"):

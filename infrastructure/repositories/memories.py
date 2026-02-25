@@ -1,6 +1,5 @@
 """Memory repository implementation."""
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +9,8 @@ from typing import (  # Tuple  # RAG disabled (used only in find_similar_memorie
     List,
     Optional,
 )
+
+import msgspec.json as mjson
 
 from domain.interfaces import IMemoryRepository
 
@@ -31,8 +32,7 @@ class MemoryRepository(IMemoryRepository):
             return
 
         try:
-            with open(self.file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = mjson.decode(self.file_path.read_bytes())
 
             # Handle new structure
             if isinstance(data, dict) and "chats" in data and "users" in data:
@@ -83,8 +83,7 @@ class MemoryRepository(IMemoryRepository):
                 "users": {str(k): v for k, v in self._memories["users"].items()},
             }
 
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.file_path.write_bytes(mjson.format(mjson.encode(data), indent=2))
         except Exception as e:
             logger.exception("Failed to save memories: %s", e)
 
@@ -351,7 +350,9 @@ class MemoryRepository(IMemoryRepository):
     def restore_from_json(self, json_content: str) -> bool:
         """Restore memories from JSON string. Returns True on success."""
         try:
-            data = json.loads(json_content)
+            data = mjson.decode(
+                json_content.encode() if isinstance(json_content, str) else json_content
+            )
 
             chats_data = {}
             if isinstance(data, dict) and "chats" in data:

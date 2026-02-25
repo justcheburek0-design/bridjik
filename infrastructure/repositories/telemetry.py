@@ -1,10 +1,11 @@
 """Telemetry repository for tracking AI usage metrics."""
 
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import msgspec.json as mjson
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,7 @@ class TelemetryRepository:
             return
 
         try:
-            with open(self.telemetry_file, "r", encoding="utf-8") as f:
-                self._metrics = json.load(f)
+            self._metrics = mjson.decode(self.telemetry_file.read_bytes())
             logger.info(f"Loaded {len(self._metrics)} telemetry records")
         except Exception:
             logger.exception("Failed to load telemetry data")
@@ -35,8 +35,7 @@ class TelemetryRepository:
     def _save_telemetry(self) -> None:
         """Save telemetry data to JSON file."""
         try:
-            with open(self.telemetry_file, "w", encoding="utf-8") as f:
-                json.dump(self._metrics, f, ensure_ascii=False, indent=2)
+            self.telemetry_file.write_bytes(mjson.format(mjson.encode(self._metrics), indent=2))
         except Exception:
             logger.exception("Failed to save telemetry data")
 
@@ -297,7 +296,9 @@ class TelemetryRepository:
             True if successful, False otherwise
         """
         try:
-            new_metrics = json.loads(json_content)
+            new_metrics = mjson.decode(
+                json_content.encode() if isinstance(json_content, str) else json_content
+            )
             if not isinstance(new_metrics, list):
                 logger.error("Invalid telemetry data: expected list")
                 return False

@@ -1,10 +1,11 @@
 """Freezes repository implementation."""
 
-import json
 import logging
 import time
 from pathlib import Path
 from typing import Dict, Optional
+
+import msgspec.json as mjson
 
 from domain.interfaces import IFreezesRepository
 
@@ -23,8 +24,8 @@ class FreezesRepository(IFreezesRepository):
             if not self.file_path.exists():
                 return
 
-            raw = self.file_path.read_text(encoding="utf-8")
-            data = json.loads(raw or "{}")
+            raw = self.file_path.read_bytes()
+            data = mjson.decode(raw) if raw.strip() else {}
             self._freezes.clear()
             now = time.time()
 
@@ -44,9 +45,7 @@ class FreezesRepository(IFreezesRepository):
         try:
             data = {str(uid): ts for uid, ts in self._freezes.items()}
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
-            self.file_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            self.file_path.write_bytes(mjson.format(mjson.encode(data), indent=2))
         except Exception:
             logging.exception("Failed to save freezes to JSON")
 

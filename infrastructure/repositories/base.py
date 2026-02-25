@@ -1,9 +1,10 @@
 """Base repository for JSON-based storage."""
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Generic, Optional, TypeVar
+
+import msgspec.json as mjson
 
 from utils.error_handlers import handle_file_operation, handle_json_operation
 
@@ -35,8 +36,8 @@ class BaseJSONRepository(Generic[T]):
             if not self.file_path.exists():
                 return {}
 
-            content = self.file_path.read_text(encoding="utf-8") or "{}"
-            return json.loads(content)
+            raw = self.file_path.read_bytes()
+            return mjson.decode(raw) if raw.strip() else {}
 
         data = handle_json_operation(load_operation, f"Loading {self.file_path.name}", {})
 
@@ -51,8 +52,7 @@ class BaseJSONRepository(Generic[T]):
 
         def save_operation():
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
-            content = json.dumps(self._data, ensure_ascii=False, indent=2)
-            self.file_path.write_text(content, encoding="utf-8")
+            self.file_path.write_bytes(mjson.format(mjson.encode(self._data), indent=2))
 
         handle_file_operation(save_operation, f"Saving {self.file_path.name}")
 

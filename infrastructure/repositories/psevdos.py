@@ -1,10 +1,11 @@
 """Psevdonyms repository implementation."""
 
-import json
 import logging
 import re
 from pathlib import Path
 from typing import Dict, Optional
+
+import msgspec.json as mjson
 
 from domain.interfaces import IPsevdoRepository
 
@@ -23,8 +24,8 @@ class PsevdoRepository(IPsevdoRepository):
             if not self.file_path.exists():
                 return
 
-            raw = self.file_path.read_text(encoding="utf-8")
-            data = json.loads(raw or "{}")
+            raw = self.file_path.read_bytes()
+            data = mjson.decode(raw) if raw.strip() else {}
             self._psevdos = {int(k): str(v) for k, v in data.items() if str(v).strip()}
         except Exception as e:
             logging.exception("Failed to load psevdos: %s", e)
@@ -35,8 +36,7 @@ class PsevdoRepository(IPsevdoRepository):
         try:
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
             data = {str(k): v for k, v in self._psevdos.items()}
-            txt = json.dumps(data, ensure_ascii=False, indent=2)
-            self.file_path.write_text(txt, encoding="utf-8")
+            self.file_path.write_bytes(mjson.format(mjson.encode(data), indent=2))
         except Exception as e:
             logging.exception("Failed to save psevdos: %s", e)
 

@@ -1,9 +1,10 @@
 """Guessing game repository implementation."""
 
-import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional
+
+import msgspec.json as mjson
 
 from domain.interfaces import IGuessesRepository
 
@@ -26,8 +27,8 @@ class GuessesRepository(IGuessesRepository):
             if not self.file_path.exists():
                 return
 
-            raw = self.file_path.read_text(encoding="utf-8") or "{}"
-            data = json.loads(raw)
+            raw = self.file_path.read_bytes()
+            data = mjson.decode(raw) if raw.strip() else {}
             if isinstance(data, dict):
                 self._guesses.clear()
                 for k, v in data.items():
@@ -50,9 +51,7 @@ class GuessesRepository(IGuessesRepository):
         """Save guesses to JSON file."""
         try:
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
-            self.file_path.write_text(
-                json.dumps(self._guesses, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            self.file_path.write_bytes(mjson.format(mjson.encode(self._guesses), indent=2))
         except Exception:
             logging.exception("Failed to save guesses to JSON")
 

@@ -1,11 +1,12 @@
 """History repository implementation."""
 
 import base64
-import json
 import logging
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Deque, Dict, List, Optional, Tuple
+
+import msgspec.json as mjson
 
 from domain.interfaces import IHistoryRepository
 from utils.text import shorten
@@ -47,7 +48,8 @@ class HistoryRepository(IHistoryRepository):
             if not self.file_path.exists():
                 return
 
-            data = json.loads(self.file_path.read_text(encoding="utf-8") or "{}")
+            raw = self.file_path.read_bytes()
+            data = mjson.decode(raw) if raw.strip() else {}
             for key, items in data.items():
                 parsed_key = self._parse_key(key)
                 if not parsed_key:
@@ -77,9 +79,7 @@ class HistoryRepository(IHistoryRepository):
                 out[key] = list(dq)
 
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
-            self.file_path.write_text(
-                json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            self.file_path.write_bytes(mjson.format(mjson.encode(out), indent=2))
         except Exception:
             logging.exception("Failed to save history to JSON")
 
