@@ -58,6 +58,11 @@ class TelemetryRepository:
             logger.exception("Failed to load pricing data")
             self._pricing = {}
 
+    def reload_pricing(self) -> None:
+        """Reload pricing from disk. Call after pricing.json is updated externally."""
+        self._load_pricing()
+        logger.info("Pricing reloaded from disk")
+
     def _calculate_cost(
         self,
         model: str,

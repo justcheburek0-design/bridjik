@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from core.config import Config
+from infrastructure.repositories.telemetry import TelemetryRepository
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -232,7 +233,12 @@ async def models_cancel_add(callback: types.CallbackQuery, config: Config, state
 
 
 @router.message(ModelStates.waiting_for_add)
-async def models_process_add(message: types.Message, config: Config, state: FSMContext):
+async def models_process_add(
+    message: types.Message,
+    config: Config,
+    state: FSMContext,
+    telemetry_repo: TelemetryRepository,
+):
     parsed = _parse_model_input(message.text.strip().split())
     if not parsed:
         await message.answer(f"❌ Неверный формат.\n\n{ADD_HELP}", parse_mode="HTML")
@@ -275,6 +281,7 @@ async def models_process_add(message: types.Message, config: Config, state: FSMC
 
     pricing[name] = _build_model_dict(input_price, output_price, cache_read)
     _save_pricing(config, pricing)
+    telemetry_repo.reload_pricing()
     items = list(pricing.keys())
     await state.update_data(models_index=items.index(name))
     await message.answer(f"✅ Модель <b>{name}</b> добавлена!", parse_mode="HTML")
@@ -285,7 +292,10 @@ async def models_process_add(message: types.Message, config: Config, state: FSMC
     F.data == "models_confirm_overwrite", ModelStates.waiting_for_confirm_overwrite
 )
 async def models_confirm_overwrite(
-    callback: types.CallbackQuery, config: Config, state: FSMContext
+    callback: types.CallbackQuery,
+    config: Config,
+    state: FSMContext,
+    telemetry_repo: TelemetryRepository,
 ):
     data = await state.get_data()
     name = data.get("pending_model_name")
@@ -300,6 +310,7 @@ async def models_confirm_overwrite(
         data.get("pending_cache_read", 0),
     )
     _save_pricing(config, pricing)
+    telemetry_repo.reload_pricing()
     items = list(pricing.keys())
     await state.update_data(models_index=items.index(name))
     await callback.message.answer(f"✅ Цены модели <b>{name}</b> обновлены!", parse_mode="HTML")
@@ -360,7 +371,12 @@ async def models_cancel_edit(callback: types.CallbackQuery, config: Config, stat
 
 
 @router.message(ModelStates.waiting_for_edit_value)
-async def models_process_edit(message: types.Message, config: Config, state: FSMContext):
+async def models_process_edit(
+    message: types.Message,
+    config: Config,
+    state: FSMContext,
+    telemetry_repo: TelemetryRepository,
+):
     parsed = _parse_model_input(message.text.strip().split())
     if not parsed:
         await message.answer(f"❌ Неверный формат.\n\n{ADD_HELP}", parse_mode="HTML")
@@ -376,6 +392,7 @@ async def models_process_edit(message: types.Message, config: Config, state: FSM
 
     pricing[name] = _build_model_dict(input_price, output_price, cache_read)
     _save_pricing(config, pricing)
+    telemetry_repo.reload_pricing()
 
     items = list(pricing.keys())
     await state.update_data(models_index=items.index(name) if name in items else 0)
@@ -426,7 +443,12 @@ async def models_delete_start(callback: types.CallbackQuery, config: Config, sta
 
 
 @router.callback_query(F.data == "models_confirm_delete", ModelStates.waiting_for_confirm_delete)
-async def models_confirm_delete(callback: types.CallbackQuery, config: Config, state: FSMContext):
+async def models_confirm_delete(
+    callback: types.CallbackQuery,
+    config: Config,
+    state: FSMContext,
+    telemetry_repo: TelemetryRepository,
+):
     data = await state.get_data()
     name = data.get("deleting_model_name")
     if not name:
@@ -437,6 +459,7 @@ async def models_confirm_delete(callback: types.CallbackQuery, config: Config, s
     if name in pricing:
         del pricing[name]
         _save_pricing(config, pricing)
+        telemetry_repo.reload_pricing()
         await callback.message.answer(f"✅ Модель <b>{name}</b> удалена!", parse_mode="HTML")
     else:
         await callback.message.answer(f"⚠️ Модель <b>{name}</b> не найдена.", parse_mode="HTML")
