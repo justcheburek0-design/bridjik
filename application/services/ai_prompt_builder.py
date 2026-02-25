@@ -74,35 +74,42 @@ class AIPromptBuilderMixin:
 
     def _build_system_prompt(self, system_prompt: str, context: MessageContext) -> str:
         """Build system prompt with stickers, chat info, memories and date."""
+        system_prompt += self._section_stickers()
+        system_prompt += self._section_chat_info(context)
+        system_prompt += self._section_memories(context)
+        system_prompt += (
+            f"\n\nТекущая дата: {datetime.now(tz=ZoneInfo('Europe/Moscow')).strftime('%Y-%m-%d')}"
+        )
+        return system_prompt
+
+    def _section_stickers(self) -> str:
         if "stickers" not in self._stickers_cache:
             self._stickers_cache["stickers"] = list(self.stickers_repo.get_all_stickers().keys())
         stickers = self._stickers_cache["stickers"]
-        if stickers:
-            system_prompt += f"\n\n## Доступные стикеры:\n{', '.join(sorted(stickers))}"
+        if not stickers:
+            return ""
+        return f"\n\n## Доступные стикеры:\n{', '.join(sorted(stickers))}"
 
+    def _section_chat_info(self, context: MessageContext) -> str:
         chat_info: dict = {"title": context.chat.title, "type": context.chat.type}
         with suppress(Exception):
-            cached = self.memory_repo.get_chat_metadata(context.chat.id)
-            if cached:
+            if cached := self.memory_repo.get_chat_metadata(context.chat.id):
                 if not chat_info["title"] and cached.get("title"):
                     chat_info["title"] = cached["title"]
-                if cached.get("description"):
-                    chat_info["description"] = cached["description"]
-                if cached.get("invite_link"):
-                    chat_info["invite_link"] = cached["invite_link"]
+                for key in ("description", "invite_link"):
+                    if cached.get(key):
+                        chat_info[key] = cached[key]
 
-        info_parts = []
-        for key, label in [
+        labels = [
             ("title", "Название"),
             ("type", "Тип"),
             ("description", "Описание"),
             ("invite_link", "Ссылка"),
-        ]:
-            if chat_info.get(key):
-                info_parts.append(f"{label}: {chat_info[key]}")
-        if info_parts:
-            system_prompt += "\n\n# Информация о чате:\n" + "\n".join(info_parts) + "\n"
+        ]
+        parts = [f"{label}: {chat_info[key]}" for key, label in labels if chat_info.get(key)]
+        return ("\n\n# Информация о чате:\n" + "\n".join(parts) + "\n") if parts else ""
 
+    def _section_memories(self, context: MessageContext) -> str:
         mem_parts: list[str] = []
         with suppress(Exception):
             if context.chat.id:
@@ -111,15 +118,10 @@ class AIPromptBuilderMixin:
                     key=lambda m: m.get("timestamp", ""),
                     reverse=True,
                 )
-                if chat_mems:
-                    mem_parts.append(
-                        "## Память чата:\n"
-                        + "\n".join(
-                            f"- {m['content'].strip()}"
-                            for m in chat_mems
-                            if m.get("content", "").strip()
-                        )
-                    )
+                if items := [
+                    f"- {m['content'].strip()}" for m in chat_mems if m.get("content", "").strip()
+                ]:
+                    mem_parts.append("## Память чата:\n" + "\n".join(items))
 
             if context.user and context.user.id:
                 user_mems = sorted(
@@ -127,24 +129,13 @@ class AIPromptBuilderMixin:
                     key=lambda m: m.get("timestamp", ""),
                     reverse=True,
                 )
-                if user_mems:
+                if items := [
+                    f"- {m['content'].strip()}" for m in user_mems if m.get("content", "").strip()
+                ]:
                     uname = context.user.username or context.user.first_name
-                    mem_parts.append(
-                        f"## Память о пользователе {uname}:\n"
-                        + "\n".join(
-                            f"- {m['content'].strip()}"
-                            for m in user_mems
-                            if m.get("content", "").strip()
-                        )
-                    )
+                    mem_parts.append(f"## Память о пользователе {uname}:\n" + "\n".join(items))
 
-        if mem_parts:
-            system_prompt += "\n\n# Память:\n" + "\n\n".join(mem_parts)
-
-        date = datetime.now(tz=ZoneInfo("Europe/Moscow")).strftime("%Y-%m-%d")
-        system_prompt += f"\n\nТекущая дата: {date}"
-
-        return system_prompt
+        return ("\n\n# Память:\n" + "\n\n".join(mem_parts)) if mem_parts else ""
 
     def _format_multimodal_message(
         self,

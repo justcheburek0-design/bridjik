@@ -214,13 +214,13 @@ class AIToolsMixin:
             return "Error: scope must be 'chat' or 'user'"
         if not content_text:
             return "Error: Content is required"
-        if not self._current_message:
-            return "Error: Available only in message context"
 
-        chat_id = self._current_message.chat.id
-        user_id = self._current_message.from_user.id
+        ctx = self._require_message_context()
+        if isinstance(ctx, str):
+            return ctx
+        chat_id, user_id = ctx
+
         scope_id = chat_id if scope == "chat" else user_id
-
         existing = (
             self.memory_repo.get_chat_memories(chat_id)
             if scope == "chat"
@@ -232,11 +232,10 @@ class AIToolsMixin:
             for memory in existing:
                 existing_tags = {t.lower() for t in memory.get("tags", [])}
                 if existing_tags and len(tags_set & existing_tags) >= min(2, len(tags_set)):
-                    mem_id = memory["id"][:8]
                     scope_label = "чата" if scope == "chat" else "пользователя"
                     return (
                         f"❌ Такая запись уже существует в памяти {scope_label}:\n\n"
-                        f"[ID: {mem_id}]\n{memory['content']}\n"
+                        f"[ID: {memory['id'][:8]}]\n{memory['content']}\n"
                         f"Теги: {', '.join(memory.get('tags', []))}\n\n"
                         f"💡 Эта информация уже сохранена, но её можно изменить."
                     )
@@ -246,16 +245,16 @@ class AIToolsMixin:
                 chat_id=chat_id, content=content_text, tags=tags, author_id=user_id
             )
             log.info("memory.saved", scope="chat", chat_id=chat_id, memory_id=memory_id)
-            content = f"✅ Запомнил (память чата): {content_text[:50]}..."
+            result_text = f"✅ Запомнил (память чата): {content_text[:50]}..."
         else:
             memory_id = self.memory_repo.add_user_memory(
                 user_id=user_id, content=content_text, tags=tags
             )
             log.info("memory.saved", scope="user", user_id=user_id, memory_id=memory_id)
-            content = f"✅ Запомнил (память о пользователе): {content_text[:50]}..."
+            result_text = f"✅ Запомнил (память о пользователе): {content_text[:50]}..."
 
         self._memory_updates.append(content_text)
-        return content
+        return result_text
 
     async def _tool_update_memory(self, args: dict) -> str:
         search_query = args.get("search_query", "").strip()
@@ -269,11 +268,12 @@ class AIToolsMixin:
             return "Error: scope must be 'chat' or 'user'"
         if not new_content and not new_tags:
             return "Error: At least one of content or tags must be provided"
-        if not self._current_message:
-            return "Error: Available only in message context"
 
-        chat_id = self._current_message.chat.id
-        user_id = self._current_message.from_user.id
+        ctx = self._require_message_context()
+        if isinstance(ctx, str):
+            return ctx
+        chat_id, user_id = ctx
+
         scope_id = chat_id if scope == "chat" else user_id
         scope_label = "памяти чата" if scope == "chat" else "памяти о пользователе"
 
@@ -283,11 +283,7 @@ class AIToolsMixin:
 
         memory_id = found[0]["id"]
         updated = self.memory_repo.update_memory(
-            scope=scope,
-            scope_id=scope_id,
-            memory_id=memory_id,
-            content=new_content,
-            tags=new_tags,
+            scope=scope, scope_id=scope_id, memory_id=memory_id, content=new_content, tags=new_tags
         )
         if updated:
             log.info("memory.updated", scope=scope, scope_id=scope_id, memory_id=memory_id)
@@ -302,11 +298,12 @@ class AIToolsMixin:
             return "Error: Search query is required"
         if scope not in ["chat", "user"]:
             return "Error: scope must be 'chat' or 'user'"
-        if not self._current_message:
-            return "Error: Available only in message context"
 
-        chat_id = self._current_message.chat.id
-        user_id = self._current_message.from_user.id
+        ctx = self._require_message_context()
+        if isinstance(ctx, str):
+            return ctx
+        chat_id, user_id = ctx
+
         scope_id = chat_id if scope == "chat" else user_id
         scope_label = "памяти чата" if scope == "chat" else "памяти о пользователе"
 
@@ -319,6 +316,12 @@ class AIToolsMixin:
     # -------------------------------------------------------------------------
     # Sticker helper
     # -------------------------------------------------------------------------
+
+    def _require_message_context(self) -> tuple[int, int] | str:
+        """Return (chat_id, user_id) or an error string if no message context."""
+        if not self._current_message:
+            return "Error: Available only in message context"
+        return self._current_message.chat.id, self._current_message.from_user.id
 
     def _find_sticker_file_id(self, msg_id: int) -> str | None:
         """Lookup sticker file_id by message_id from current message context."""

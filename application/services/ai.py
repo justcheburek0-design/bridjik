@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -48,38 +49,42 @@ COMMAND_RE = re.compile(
 NOISE_RE = re.compile(r"^\s*(?:[^\w\s]|[\w]{1,2})\s*$")
 
 
+@dataclass
+class AIServiceDeps:
+    """All external dependencies for AIService."""
+
+    openai_client: AsyncOpenAI
+    history_repo: IHistoryRepository
+    chat_logs_repo: IChatLogsRepository
+    model: str
+    mb_api: MineBridgeAPI
+    mc_api: MinecraftAPI
+    news_api: Any
+    tavily_api: Any
+    config: Config
+    stickers_repo: Any
+    memory_repo: Any
+    rag_service: Any
+    telemetry_repo: Any
+
+
 class AIService(AIToolsMixin, AIPromptBuilderMixin, AITTSMixin):
     """Service for AI completions."""
 
-    def __init__(
-        self,
-        openai_client: AsyncOpenAI,
-        history_repo: IHistoryRepository,
-        chat_logs_repo: IChatLogsRepository,
-        model: str,
-        mb_api: MineBridgeAPI,
-        mc_api: MinecraftAPI,
-        news_api,
-        tavily_api,
-        config: Config,
-        stickers_repo,
-        memory_repo,
-        rag_service,
-        telemetry_repo,
-    ):
-        self.client = openai_client
-        self.history_repo = history_repo
-        self.chat_logs_repo = chat_logs_repo
-        self.model = model
-        self.mb_api = mb_api
-        self.mc_api = mc_api
-        self.news_api = news_api
-        self.tavily_api = tavily_api
-        self.config = config
-        self.stickers_repo = stickers_repo
-        self.memory_repo = memory_repo
-        self.rag_service = rag_service
-        self.telemetry_repo = telemetry_repo
+    def __init__(self, deps: AIServiceDeps):
+        self.client = deps.openai_client
+        self.history_repo = deps.history_repo
+        self.chat_logs_repo = deps.chat_logs_repo
+        self.model = deps.model
+        self.mb_api = deps.mb_api
+        self.mc_api = deps.mc_api
+        self.news_api = deps.news_api
+        self.tavily_api = deps.tavily_api
+        self.config = deps.config
+        self.stickers_repo = deps.stickers_repo
+        self.memory_repo = deps.memory_repo
+        self.rag_service = deps.rag_service
+        self.telemetry_repo = deps.telemetry_repo
 
         self._memory_updates: list = []
         self._pending_reactions: list[tuple[str, str]] = []

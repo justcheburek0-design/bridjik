@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.services.ai import AIService
+from application.services.ai import AIService, AIServiceDeps
 from application.services.game import GameService
 from application.services.media import MediaService
 
@@ -64,21 +64,23 @@ class Container:
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
         self.game_service = GameService(self.memory_repo)
         # self.rag_service = RAGService(self.config, self.mc_api, self.mb_api)  # RAG disabled
-        self.rag_service = None  # Placeholder for disabled RAG
+        self.rag_service = None
         self.ai_service = AIService(
-            self.openai_client,
-            self.history_repo,
-            self.chat_logs_repo,
-            self.config.AI_MODEL,
-            self.mb_api,
-            self.mc_api,
-            self.news_api,
-            self.tavily_api,
-            self.config,
-            self.stickers_repo,
-            self.memory_repo,
-            self.rag_service,
-            self.telemetry_repo,
+            AIServiceDeps(
+                openai_client=self.openai_client,
+                history_repo=self.history_repo,
+                chat_logs_repo=self.chat_logs_repo,
+                model=self.config.AI_MODEL,
+                mb_api=self.mb_api,
+                mc_api=self.mc_api,
+                news_api=self.news_api,
+                tavily_api=self.tavily_api,
+                config=self.config,
+                stickers_repo=self.stickers_repo,
+                memory_repo=self.memory_repo,
+                rag_service=self.rag_service,
+                telemetry_repo=self.telemetry_repo,
+            )
         )
         self.media_service = MediaService(
             self.bot,

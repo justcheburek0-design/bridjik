@@ -22,6 +22,34 @@ class MemoryRepository(IMemoryRepository):
         self._memories: dict[str, dict[int, list[dict]]] = {"chats": {}, "users": {}}
         self._load()
 
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _migrate_chats_data(raw_chats: dict) -> dict[int, dict]:
+        """Normalize chats data from any legacy format to {chat_id: {memories, metadata}}."""
+        result = {}
+        for k, v in raw_chats.items():
+            chat_id = int(k)
+            if isinstance(v, list):
+                result[chat_id] = {"memories": v, "metadata": {}}
+            elif isinstance(v, dict):
+                result[chat_id] = {
+                    "memories": v.get("memories", []),
+                    "metadata": v.get("metadata", {}),
+                }
+            else:
+                result[chat_id] = {"memories": [], "metadata": {}}
+        return result
+
+    def _get_memories_list(self, scope: str, scope_id: int) -> list[dict] | None:
+        """Return the mutable memories list for the given scope/id, or None if not found."""
+        if scope == "chat":
+            data = self._memories["chats"].get(scope_id)
+            return data["memories"] if data else None
+        return self._memories["users"].get(scope_id)
+
     def _load(self):
         """Load memories from JSON file."""
         if not self.file_path.exists():
@@ -31,26 +59,9 @@ class MemoryRepository(IMemoryRepository):
         try:
             data = mjson.decode(self.file_path.read_bytes())
 
-            # Handle new structure
             if isinstance(data, dict) and "chats" in data and "users" in data:
-                chats_data = {}
-                # Migration logic: convert list to dict if needed
-                for k, v in data.get("chats", {}).items():
-                    chat_id = int(k)
-                    if isinstance(v, list):
-                        # Old structure: list of memories
-                        chats_data[chat_id] = {"memories": v, "metadata": {}}
-                    elif isinstance(v, dict):
-                        # New structure or already migrated
-                        chats_data[chat_id] = {
-                            "memories": v.get("memories", []),
-                            "metadata": v.get("metadata", {}),
-                        }
-                    else:
-                        chats_data[chat_id] = {"memories": [], "metadata": {}}
-
                 self._memories = {
-                    "chats": chats_data,
+                    "chats": self._migrate_chats_data(data.get("chats", {})),
                     "users": {int(k): v for k, v in data.get("users", {}).items()},
                 }
             else:
@@ -169,30 +180,18 @@ class MemoryRepository(IMemoryRepository):
         tags: list[str] | None = None,
     ) -> bool:
         """Update a memory record. Returns True if found and updated."""
-        if scope not in ["chat", "user"]:
-            logger.warning(f"Invalid scope: {scope}")
+        memories_list = self._get_memories_list(scope, scope_id)
+        if memories_list is None:
             return False
-
-        if scope == "chat":
-            if scope_id not in self._memories["chats"]:
-                return False
-            memories_list = self._memories["chats"][scope_id]["memories"]
-        else:
-            if scope_id not in self._memories["users"]:
-                return False
-            memories_list = self._memories["users"][scope_id]
 
         for memory in memories_list:
             if memory["id"] == memory_id:
-                # Update fields if provided
                 if content is not None:
                     memory["content"] = content.strip()
                 if tags is not None:
                     memory["tags"] = tags
-
                 memory["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._save()
-
                 logger.info(f"Updated {scope} memory {memory_id} in {scope} {scope_id}")
                 return True
 
@@ -200,26 +199,13 @@ class MemoryRepository(IMemoryRepository):
 
     def delete_memory(self, scope: str, scope_id: int, memory_id: str) -> bool:
         """Delete a memory by ID. Returns True if found and deleted."""
-        if scope not in ["chat", "user"]:
-            logger.warning(f"Invalid scope: {scope}")
+        memories_list = self._get_memories_list(scope, scope_id)
+        if memories_list is None:
             return False
 
-        if scope == "chat":
-            if scope_id not in self._memories["chats"]:
-                return False
-            memories_list = self._memories["chats"][scope_id]["memories"]
-            original_count = len(memories_list)
-            self._memories["chats"][scope_id]["memories"] = [
-                m for m in memories_list if m["id"] != memory_id
-            ]
-            deleted = len(self._memories["chats"][scope_id]["memories"]) < original_count
-        else:
-            if scope_id not in self._memories["users"]:
-                return False
-            memories_list = self._memories["users"][scope_id]
-            original_count = len(memories_list)
-            self._memories["users"][scope_id] = [m for m in memories_list if m["id"] != memory_id]
-            deleted = len(self._memories["users"][scope_id]) < original_count
+        original_count = len(memories_list)
+        memories_list[:] = [m for m in memories_list if m["id"] != memory_id]
+        deleted = len(memories_list) < original_count
 
         if deleted:
             self._save()
@@ -249,30 +235,17 @@ class MemoryRepository(IMemoryRepository):
 
     def search_memories(self, scope: str, scope_id: int, query: str) -> list[dict]:
         """Search memories by tags or content."""
-        if scope not in ["chat", "user"]:
+        memories_list = self._get_memories_list(scope, scope_id)
+        if not memories_list:
             return []
 
-        if scope == "chat":
-            if scope_id not in self._memories["chats"]:
-                return []
-            memories_list = self._memories["chats"][scope_id]["memories"]
-        else:
-            if scope_id not in self._memories["users"]:
-                return []
-            memories_list = self._memories["users"][scope_id]
-
         query_lower = query.lower()
-        results = []
-
-        for memory in memories_list:
-            if query_lower in memory.get("content", "").lower():
-                results.append(memory)
-                continue
-            tags = memory.get("tags", [])
-            if any(query_lower in tag.lower() for tag in tags):
-                results.append(memory)
-
-        return results
+        return [
+            m
+            for m in memories_list
+            if query_lower in m.get("content", "").lower()
+            or any(query_lower in tag.lower() for tag in m.get("tags", []))
+        ]
 
     def search_and_delete(self, scope: str, scope_id: int, query: str) -> dict | None:
         """Search for a memory and delete the first match. Returns deleted memory or None."""
@@ -351,33 +324,17 @@ class MemoryRepository(IMemoryRepository):
                 json_content.encode() if isinstance(json_content, str) else json_content
             )
 
-            chats_data = {}
             if isinstance(data, dict) and "chats" in data:
-                # Same migration logic as _load
-                for k, v in data.get("chats", {}).items():
-                    chat_id = int(k)
-                    if isinstance(v, list):
-                        chats_data[chat_id] = {"memories": v, "metadata": {}}
-                    elif isinstance(v, dict):
-                        chats_data[chat_id] = {
-                            "memories": v.get("memories", []),
-                            "metadata": v.get("metadata", {}),
-                        }
-                    else:
-                        chats_data[chat_id] = {"memories": [], "metadata": {}}
+                chats_data = self._migrate_chats_data(data.get("chats", {}))
+                users_data = {int(k): v for k, v in data.get("users", {}).items()}
             else:
-                # Old structure fallback
-                for k, v in data.items():
-                    if k != "users":
-                        chats_data[int(k)] = {"memories": v, "metadata": {}}
+                # Old structure fallback: top-level keys are chat_ids
+                chats_data = {
+                    int(k): {"memories": v, "metadata": {}} for k, v in data.items() if k != "users"
+                }
+                users_data = {}
 
-            self._memories = {
-                "chats": chats_data,
-                "users": (
-                    {int(k): v for k, v in data.get("users", {}).items()} if "users" in data else {}
-                ),
-            }
-
+            self._memories = {"chats": chats_data, "users": users_data}
             self._save()
             logger.info("Restored memories successfully")
             return True
