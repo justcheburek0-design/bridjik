@@ -1,4 +1,4 @@
-"""Analytics admin handlers for telemetry."""
+"""metrics admin handlers for telemetry."""
 
 import logging
 from io import BytesIO
@@ -16,15 +16,13 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-class AnalyticsStates(StatesGroup):
+class metricsStates(StatesGroup):
     waiting_for_restore_file = State()
 
 
-@router.message(Command("analytics"))
-async def cmd_analytics(
-    message: types.Message, config: Config, telemetry_repo: TelemetryRepository
-):
-    """Display telemetry analytics for admins."""
+@router.message(Command("metrics"))
+async def cmd_metrics(message: types.Message, config: Config, telemetry_repo: TelemetryRepository):
+    """Display telemetry metrics for admins."""
 
     if message.from_user.id not in config.ADMIN_IDS:
         return
@@ -33,24 +31,22 @@ async def cmd_analytics(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
-                    text="📊 Общая статистика", callback_data="analytics_overview"
+                    text="📊 Общая статистика", callback_data="metrics_overview"
                 )
             ],
             [
                 types.InlineKeyboardButton(
-                    text="👥 Топ пользователей", callback_data="analytics_top_users"
+                    text="👥 Топ пользователей", callback_data="metrics_top_users"
                 )
             ],
             [
                 types.InlineKeyboardButton(
-                    text="🤖 Статистика моделей", callback_data="analytics_models"
+                    text="🤖 Статистика моделей", callback_data="metrics_models"
                 )
             ],
             [
-                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="analytics_backup"),
-                types.InlineKeyboardButton(
-                    text="🔄 Восстановить", callback_data="analytics_restore"
-                ),
+                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="metrics_backup"),
+                types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="metrics_restore"),
             ],
         ]
     )
@@ -58,37 +54,35 @@ async def cmd_analytics(
     await message.answer("<b>📈 Аналитика телеметрии</b>", reply_markup=kb)
 
 
-@router.callback_query(F.data == "analytics_menu")
+@router.callback_query(F.data == "metrics_menu")
 async def back_to_menu(callback: types.CallbackQuery):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(
-                    text="📊 Общая статистика", callback_data="analytics_overview"
+                    text="📊 Общая статистика", callback_data="metrics_overview"
                 )
             ],
             [
                 types.InlineKeyboardButton(
-                    text="👥 Топ пользователей", callback_data="analytics_top_users"
+                    text="👥 Топ пользователей", callback_data="metrics_top_users"
                 )
             ],
             [
                 types.InlineKeyboardButton(
-                    text="🤖 Статистика моделей", callback_data="analytics_models"
+                    text="🤖 Статистика моделей", callback_data="metrics_models"
                 )
             ],
             [
-                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="analytics_backup"),
-                types.InlineKeyboardButton(
-                    text="🔄 Восстановить", callback_data="analytics_restore"
-                ),
+                types.InlineKeyboardButton(text="💾 Бэкап", callback_data="metrics_backup"),
+                types.InlineKeyboardButton(text="🔄 Восстановить", callback_data="metrics_restore"),
             ],
         ]
     )
     await callback.message.edit_text("<b>📈 Аналитика телеметрии</b>", reply_markup=kb)
 
 
-@router.callback_query(F.data == "analytics_overview")
+@router.callback_query(F.data == "metrics_overview")
 async def show_overview(callback: types.CallbackQuery, telemetry_repo: TelemetryRepository):
     """Display overall statistics."""
 
@@ -118,7 +112,7 @@ async def show_overview(callback: types.CallbackQuery, telemetry_repo: Telemetry
     # Back button
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="analytics_menu")]
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="metrics_menu")]
         ]
     )
 
@@ -126,7 +120,7 @@ async def show_overview(callback: types.CallbackQuery, telemetry_repo: Telemetry
     await callback.answer()
 
 
-@router.callback_query(F.data == "analytics_top_users")
+@router.callback_query(F.data == "metrics_top_users")
 async def show_top_users(callback: types.CallbackQuery, telemetry_repo: TelemetryRepository):
     """Display top users by token usage and cost."""
 
@@ -158,7 +152,7 @@ async def show_top_users(callback: types.CallbackQuery, telemetry_repo: Telemetr
     # Back button
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="analytics_menu")]
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="metrics_menu")]
         ]
     )
 
@@ -166,7 +160,7 @@ async def show_top_users(callback: types.CallbackQuery, telemetry_repo: Telemetr
     await callback.answer()
 
 
-@router.callback_query(F.data == "analytics_models")
+@router.callback_query(F.data == "metrics_models")
 async def show_models(callback: types.CallbackQuery, telemetry_repo: TelemetryRepository):
     """Display statistics by model."""
 
@@ -187,7 +181,7 @@ async def show_models(callback: types.CallbackQuery, telemetry_repo: TelemetryRe
     # Back button
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="analytics_menu")]
+            [types.InlineKeyboardButton(text="🔙 Назад", callback_data="metrics_menu")]
         ]
     )
 
@@ -195,7 +189,7 @@ async def show_models(callback: types.CallbackQuery, telemetry_repo: TelemetryRe
     await callback.answer()
 
 
-@router.callback_query(F.data == "analytics_backup")
+@router.callback_query(F.data == "metrics_backup")
 async def backup_telemetry(callback: types.CallbackQuery, telemetry_repo: TelemetryRepository):
     """Export telemetry data as JSON."""
 
@@ -219,25 +213,25 @@ async def backup_telemetry(callback: types.CallbackQuery, telemetry_repo: Teleme
         await callback.answer(f"Ошибка: {str(e)}", show_alert=True)
 
 
-@router.callback_query(F.data == "analytics_restore")
+@router.callback_query(F.data == "metrics_restore")
 async def start_restore_telemetry(callback: types.CallbackQuery, state: FSMContext):
     """Start telemetry restore flow."""
 
-    await state.set_state(AnalyticsStates.waiting_for_restore_file)
+    await state.set_state(metricsStates.waiting_for_restore_file)
     await callback.message.answer(
         "⚠️ <b>Внимание!</b> Восстановление перезапишет текущие данные телеметрии.\n"
         "Отправьте файл <code>telemetry.json</code> для восстановления:",
         parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="analytics_menu")]
+                [types.InlineKeyboardButton(text="🔙 Отмена", callback_data="metrics_menu")]
             ]
         ),
     )
     await callback.answer()
 
 
-@router.message(AnalyticsStates.waiting_for_restore_file, F.document)
+@router.message(metricsStates.waiting_for_restore_file, F.document)
 async def process_restore_file(
     message: types.Message, state: FSMContext, telemetry_repo: TelemetryRepository, bot: Bot
 ):
