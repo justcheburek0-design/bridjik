@@ -1,6 +1,7 @@
 """RAG (Retrieval-Augmented Generation) service for knowledge base search."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -118,8 +119,6 @@ class RAGService:
 
     def _hash_str(self, s: str) -> str:
         """Simple hash for string."""
-        import hashlib
-
         return hashlib.md5(s.encode()).hexdigest()[:16]
 
     async def _ensure_rag_index(self):

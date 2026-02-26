@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import msgspec.json as mjson
 import structlog
 from pydantic_ai import Agent, RunContext
 
@@ -19,40 +20,30 @@ def register_tools(agent: "Agent[Any, str]") -> None:
     @agent.tool
     async def get_player_info(ctx: RunContext[Any], query: str) -> str:
         """Get MineBridge player info by name or UUID."""
-        import msgspec.json as mjson
-
         data = await ctx.deps.mb_api.search_player(query)
         return mjson.encode(data).decode() if data else "Player not found"
 
     @agent.tool
     async def get_server_status(ctx: RunContext[Any]) -> str:
         """Get current Minecraft server status."""
-        import msgspec.json as mjson
-
         data = await ctx.deps.mc_api.fetch_status()
         return mjson.encode(data).decode()
 
     @agent.tool
     async def get_news(ctx: RunContext[Any], limit: int = 10, offset: int = 0) -> str:
         """Get MineBridge news feed."""
-        import msgspec.json as mjson
-
         data = await ctx.deps.news_api.fetch_news(min(limit, 20), offset)
         return mjson.encode(data).decode() if data else "Failed to fetch news"
 
     @agent.tool
     async def get_events(ctx: RunContext[Any], season: int = -1) -> str:
         """Get MineBridge events for a season (-1 = current)."""
-        import msgspec.json as mjson
-
         data = await ctx.deps.mb_api.fetch_events(season)
         return mjson.encode(data).decode() if data else "Failed to fetch events"
 
     @agent.tool
     async def get_top_players(ctx: RunContext[Any], limit: int = 5, offset: int = 0) -> str:
         """Get top players leaderboard."""
-        import msgspec.json as mjson
-
         data = await ctx.deps.mb_api.fetch_top_players(min(limit, 15), offset)
         return mjson.encode(data).decode() if data else "Failed to fetch top players"
 

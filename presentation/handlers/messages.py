@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Router, types
+from aiogram.types import ReactionTypeEmoji
 
 from application.services.ai import AIService
 from application.services.media import MediaService
@@ -289,8 +290,6 @@ async def auto_reply(
 
         # Set pending reactions after messages are logged
         if pending_reactions:
-            from aiogram.types import ReactionTypeEmoji
-
             for emoji, excerpt in pending_reactions:
                 try:
                     # Find message by excerpt using ai_service helper

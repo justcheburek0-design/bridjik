@@ -5,6 +5,8 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from ..utils.text import get_hour_string
+
 
 class Formatter:
     """Text formatter for bot responses."""
@@ -27,8 +29,6 @@ class Formatter:
     @staticmethod
     def format_freeze_message(username: str, hours: int, is_active: bool = True) -> str:
         """Format freeze status message."""
-        from ..utils.text import get_hour_string
-
         if is_active:
             return f"🔐 Авто-ответы <b>выключены</b> для <b>{username}</b> на <b>{get_hour_string(hours)}</b>"
         else:

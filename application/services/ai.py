@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import re
-import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import structlog
 from aiogram import types
+from aiogram.types import ReactionTypeEmoji
 from cachetools import TTLCache
 from openai import AsyncOpenAI
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
@@ -112,7 +112,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         stickers_repo: Any,
         memory_repo: Any,
         rag_service: Any,
-        telemetry_repo: Any,
     ):
         self.history_repo = history_repo
         self.chat_logs_repo = chat_logs_repo
@@ -121,7 +120,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         self.stickers_repo = stickers_repo
         self.memory_repo = memory_repo
         self.rag_service = rag_service
-        self.telemetry_repo = telemetry_repo
 
         self._stickers_cache: TTLCache = TTLCache(maxsize=1, ttl=60)
 
@@ -207,10 +205,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         self._deps.memory_updates = []
         pending_reactions: list[tuple[str, str]] = []
 
-        overall_start = time.time()
-        telemetry_error: str | None = None
-        usage = None
-
         full_system_prompt = self._build_system_prompt(system_prompt, context)
         history = self._build_message_history(context, message)
 
@@ -228,14 +222,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
             text = re.sub(r"(\]\(){2,}", "", text)
             text = remove_html(text)
 
-            budget_warning = (
-                await self._check_user_budget(context.user.id, context.chat.id)
-                if context.user and context.user.id
-                else None
-            )
-            if budget_warning:
-                text += budget_warning
-
             usage = result.usage()
             req_log.info(
                 "ai.complete",
@@ -247,16 +233,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
         except Exception as e:
             req_log.error("ai.error", error=str(e))
-            telemetry_error = str(e)
             return DEFAULT_ERROR_MESSAGE, self._deps.memory_updates, []
-
-        finally:
-            self._record_telemetry(
-                context=context,
-                overall_start=overall_start,
-                usage=usage,
-                error=telemetry_error,
-            )
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -266,8 +243,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         self, context: MessageContext, message: types.Message | None
     ) -> list:
         """Convert recent chat logs to pydantic-ai ModelMessage history."""
-        from pydantic_ai import ModelRequest, ModelResponse, TextPart, UserPromptPart
-
         if not message:
             return []
 
@@ -308,26 +283,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
         return history
 
-    def _record_telemetry(
-        self,
-        context: MessageContext,
-        overall_start: float,
-        usage: Any = None,
-        error: str | None = None,
-    ) -> None:
-        if not (context.user and context.user.id):
-            return
-        with suppress(Exception):
-            self.telemetry_repo.record_request(
-                user_id=context.user.id,
-                chat_id=context.chat.id,
-                model=self.model,
-                tokens_input=usage.input_tokens if usage else 0,
-                tokens_output=usage.output_tokens if usage else 0,
-                latency_ms=int((time.time() - overall_start) * 1000),
-                error=error,
-            )
-
     def _parse_reactions(self, text: str) -> tuple[str, list[tuple[str, str]]]:
         pattern = r"\[emoji:(.*?):(.*?)\]"
         reactions = [
@@ -361,8 +316,6 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         if not hasattr(self, "_pending_reactions") or not self._pending_reactions:
             return
 
-        from aiogram.types import ReactionTypeEmoji
-
         for emoji, excerpt in self._pending_reactions:
             msg_id = self._find_message_by_excerpt(chat_id, excerpt)
             if msg_id:
@@ -377,20 +330,3 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                 log.warning("reaction.msg_not_found", emoji=emoji, excerpt=excerpt[:30])
 
         self._pending_reactions = []
-
-    async def _check_user_budget(self, user_id: int, chat_id: int) -> str | None:
-        try:
-            tokens_used = self.telemetry_repo.get_user_tokens_in_window(
-                user_id, hours=self.config.TELEMETRY_WINDOW_HOURS
-            )
-            soft_limit = self.config.TELEMETRY_SOFT_LIMIT_TOKENS
-            if tokens_used > soft_limit * 0.9:
-                remaining = soft_limit - tokens_used
-                return (
-                    f"\n\n⚠️ <b>Внимание:</b> использовано {tokens_used:,} токенов "
-                    f"за последние {self.config.TELEMETRY_WINDOW_HOURS} часа "
-                    f"(лимит: {soft_limit:,}, осталось: {remaining:,})"
-                )
-        except Exception:
-            log.exception("budget.check_failed", user_id=user_id)
-        return None

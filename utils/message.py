@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from aiogram import types
 
+from utils.message_formatter import combine_text_and_media
+
 
 def get_media_description(message: types.Message) -> str:
     """Генерирует текстовое описание медиа из сообщения."""
@@ -59,8 +61,6 @@ def get_media_description(message: types.Message) -> str:
 
 def get_message_text(message: types.Message) -> str:
     """Извлекает текст из сообщения, включая описание медиа."""
-    from utils.message_formatter import combine_text_and_media
-
     text = (getattr(message, "text", None) or getattr(message, "caption", None) or "").strip()
     media_desc = get_media_description(message)
     return combine_text_and_media(text, media_desc) or "(пусто)"

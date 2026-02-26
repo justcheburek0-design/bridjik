@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import gzip
+import json
 import logging
 import mimetypes
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -24,6 +30,14 @@ from infrastructure.repositories.stickers import StickersRepository
 from utils.markdown_to_html import markdown_to_telegram_html
 
 logger = logging.getLogger(__name__)
+
+try:
+    from rlottie import LottieAnimation as _LottieAnimation
+
+    _rlottie_available = True
+except ImportError:
+    _LottieAnimation = None  # type: ignore[assignment,misc]
+    _rlottie_available = False
 
 
 # Media tag regex
@@ -566,8 +580,6 @@ class MediaService:
                         # Check if it's base64 data URL
                         if image_url.startswith("data:"):
                             logger.info("Converting base64 data URL to bytes")
-                            import base64
-
                             try:
                                 # Format: data:image/jpeg;base64,<base64_data>
                                 base64_data = image_url.split(",", 1)[1]
@@ -602,8 +614,6 @@ class MediaService:
 
                 if matches:
                     logger.info("Found base64 in markdown format")
-                    import base64
-
                     try:
                         base64_data = matches[0].split(",", 1)[1]
                         image_bytes = base64.b64decode(base64_data)
@@ -952,10 +962,6 @@ class MediaService:
     async def _extract_video_sticker_frame(self, video_bytes: bytes) -> bytes | None:
         """Extract first frame from video sticker."""
         try:
-            import shutil
-            import subprocess
-            import tempfile
-
             # Check if ffmpeg is available
             ffmpeg_path = shutil.which("ffmpeg")
             if not ffmpeg_path:
@@ -1041,10 +1047,6 @@ class MediaService:
     async def _convert_tgs_to_image(self, tgs_bytes: bytes) -> bytes | None:
         """Convert TGS animated sticker to static image."""
         try:
-            import gzip
-            import json
-            import tempfile
-
             # TGS files are gzipped JSON (Lottie format)
             try:
                 decompressed = gzip.decompress(tgs_bytes)
@@ -1057,18 +1059,12 @@ class MediaService:
                 return None
 
             # Try to use rlottie for rendering (if available)
-            rlottie_available = False
-            try:
-                from rlottie import LottieAnimation  # noqa: F401
-
-                rlottie_available = True
-            except ImportError:
+            if not _rlottie_available:
                 logger.info("rlottie library not available for TGS conversion")
 
-            if rlottie_available:
+            if _rlottie_available:
                 try:
-                    from rlottie import LottieAnimation  # noqa: F811
-
+                    LottieAnimation = _LottieAnimation
                     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp_json:
                         tmp_json.write(decompressed)
                         tmp_json_path = tmp_json.name

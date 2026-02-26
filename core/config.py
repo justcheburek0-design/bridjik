@@ -10,6 +10,7 @@ from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from __init__ import __version__
+from core.exceptions import ConfigurationError
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -75,10 +76,6 @@ class Config(BaseSettings):
     # Freeze options (hours)
     FREEZE_OPTIONS: Tuple[int, ...] = (1, 4, 12, 24)
 
-    # Telemetry
-    TELEMETRY_SOFT_LIMIT_TOKENS: int = 100_000
-    TELEMETRY_WINDOW_HOURS: int = 3
-
     # Computed paths (set in model_validator)
     BASE_DIR: Path = _BASE_DIR
     DATA_DIR: Path = _BASE_DIR / "data"
@@ -88,7 +85,6 @@ class Config(BaseSettings):
     FREEZES_FILE: Path = _BASE_DIR / "data" / "freezes.json"
     STICKERS_FILE: Path = _BASE_DIR / "data" / "stickers.json"
     MEMORIES_FILE: Path = _BASE_DIR / "data" / "memories.json"
-    TELEMETRY_FILE: Path = _BASE_DIR / "data" / "telemetry.json"
     VOICES_DIR: Path = _BASE_DIR / "voices"
     TOOLS_FILE: Path = _BASE_DIR / "application" / "resources" / "tools.json"
 
@@ -100,8 +96,6 @@ class Config(BaseSettings):
 
     def validate(self) -> None:
         """Validate required configuration."""
-        from core.exceptions import ConfigurationError
-
         checks = [
             (self.BOT_TOKEN, "BOT_TOKEN is required in .env"),
             (self.OPENAI_API_KEY, "OPENAI_API_KEY is required in .env"),
