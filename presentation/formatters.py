@@ -5,7 +5,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
-from ..utils.text import get_hour_string
+from utils.text import get_hour_string
 
 
 class Formatter:
