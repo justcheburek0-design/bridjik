@@ -4,20 +4,11 @@ from __future__ import annotations
 
 from aiogram import types
 
-from utils.message import get_media_description
-
-
-def combine_text_and_media(text: str, media_desc: str) -> str:
-    """Комбинирует текст и описание медиа в одну строку."""
-    if text and media_desc:
-        if media_desc.startswith("🎤 Голосовое сообщение"):
-            return f"{media_desc}: {text}"
-        return f"{media_desc}\\n\\n{text}"
-    return media_desc or text or ""
+from utils.message_media import combine_text_and_media, get_media_description
 
 
 def build_message_text_for_save(message: types.Message, prompt: str) -> str:
-    """Формирует текст сообщения для сохранения в историю/логи."""
+    """Формирует текст сообщения для сохранения в историю/лог."""
     media_desc = get_media_description(message)
     return combine_text_and_media(prompt, media_desc) or "(пусто)"
 
