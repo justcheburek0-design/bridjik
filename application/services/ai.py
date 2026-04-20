@@ -284,7 +284,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         return history
 
     def _parse_reactions(self, text: str) -> tuple[str, list[tuple[str, str]]]:
-        pattern = r"\[emoji:(.*?):(.*?)\]"
+        pattern = r"\[(.*?):(.*?)\]"
         reactions = [
             (m.group(1).strip(), m.group(2).strip())
             for m in re.finditer(pattern, text)
@@ -293,7 +293,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         for emoji, excerpt in reactions:
             log.info("reaction.parsed", emoji=emoji, excerpt=excerpt[:30])
 
-        cleaned = re.sub(r"\n*\[emoji:.*?:.*?\]\n*", "", text)
+        cleaned = re.sub(r"\n*\[.*?:.*?\]\n*", "", text)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         return cleaned, reactions
 
