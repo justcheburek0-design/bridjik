@@ -10,6 +10,7 @@ import sys
 import structlog
 
 from core.dependencies import Container
+from infrastructure.health import start_health_server
 from presentation.handlers import admin_memories, admin_stickers, callbacks, messages
 from presentation.handlers.commands import admin, info, server, start, user
 
@@ -126,6 +127,10 @@ async def main():
     """Main function."""
     log.info("bot.starting")
 
+    # Start health check server
+    health_runner = await start_health_server()
+    log.info("health.server_started", port=8000)
+
     container = Container()
     register_handlers(container)
     await on_startup(container)
@@ -137,6 +142,7 @@ async def main():
     except Exception as e:
         log.exception("bot.fatal_error", error=str(e))
     finally:
+        await health_runner.cleanup()
         await on_shutdown(container)
 
 
