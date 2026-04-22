@@ -16,11 +16,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Build stage
 FROM base AS build
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy dependency files
 COPY pyproject.toml ./
+COPY README.md ./
 
-# Install dependencies
-RUN pip install --no-cache-dir -e .
+# Install dependencies directly (not in editable mode)
+RUN pip install --no-cache-dir .
 
 # Production stage
 FROM base AS production
