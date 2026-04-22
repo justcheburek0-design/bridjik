@@ -22,12 +22,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
-COPY pyproject.toml ./
-COPY README.md ./
+# Copy all files needed for installation
+COPY . .
 
-# Install dependencies directly (not in editable mode)
-RUN pip install --no-cache-dir .
+# Install dependencies
+RUN pip install --no-cache-dir \
+    aiogram==3.22.0 \
+    httpx==0.28.1 \
+    openai>=2.0 \
+    python-dotenv==1.1.1 \
+    nextcord==2.6.0 \
+    google-generativeai==0.8.5 \
+    rlottie-python==1.3.8 \
+    Pillow==11.2.1 \
+    edge-tts==7.2.3 \
+    aiohttp==3.11.11 \
+    pydantic-settings>=2.13 \
+    tenacity>=9.0 \
+    structlog>=25.0 \
+    cachetools>=6.0 \
+    msgspec>=0.20 \
+    bleach>=6.0 \
+    markdown-it-py>=3.0 \
+    pydantic-ai>=0.0.49
 
 # Production stage
 FROM base AS production
