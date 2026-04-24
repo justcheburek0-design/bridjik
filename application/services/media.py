@@ -16,7 +16,7 @@ import tempfile
 import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 from urllib.parse import unquote, urlparse
 
 import httpx

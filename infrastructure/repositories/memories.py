@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import msgspec
 import msgspec.json as mjson
 import structlog
 

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Tuple
 
 from pydantic import field_validator, model_validator
-from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from __init__ import __version__

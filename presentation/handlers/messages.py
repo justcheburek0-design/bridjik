@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Message handlers."""
+
+from __future__ import annotations
 
 import logging
 

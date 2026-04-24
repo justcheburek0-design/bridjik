@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Dict
 from urllib.parse import quote_plus
 
 import httpx

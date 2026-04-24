@@ -1,7 +1,5 @@
 """Health check endpoint for Docker healthcheck."""
 
-import asyncio
-
 from aiohttp import web
 
 
