@@ -12,7 +12,7 @@ from aiogram import types
 from aiogram.types import ReactionTypeEmoji
 from cachetools import TTLCache
 from openai import AsyncOpenAI
-from pydantic_ai import Agent, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai import Agent, ImageUrl, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
@@ -208,9 +208,19 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         full_system_prompt = self._build_system_prompt(system_prompt, context)
         history = self._build_message_history(context, message)
 
+        # Build user prompt with optional image
+        if context.has_image and context.image_bytes and context.mime_type:
+            from utils.media import make_data_url
+
+            data_url = make_data_url(context.image_bytes, context.mime_type)
+            # Create multimodal prompt with text and image
+            user_prompt = [context.prompt or "Что на картинке?", ImageUrl(url=data_url)]
+        else:
+            user_prompt = context.prompt
+
         try:
             result = await self._agent.run(
-                context.prompt,
+                user_prompt,
                 deps=self._deps,
                 message_history=history,
                 model_settings=ModelSettings(temperature=1),
@@ -274,12 +284,23 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
             full_text = text + reaction_text
 
+            # Build message parts (text + optional image)
             if is_bot:
-                history.append(ModelResponse(parts=[TextPart(content=full_text)]))
+                parts = [TextPart(content=full_text)]
+                if image_bytes and mime_type:
+                    from utils.media import make_data_url
+
+                    data_url = make_data_url(image_bytes, mime_type)
+                    parts.append(ImageUrl(url=data_url))
+                history.append(ModelResponse(parts=parts))
             else:
-                history.append(
-                    ModelRequest(parts=[UserPromptPart(content=f"{author}: {full_text}")])
-                )
+                parts = [UserPromptPart(content=f"{author}: {full_text}")]
+                if image_bytes and mime_type:
+                    from utils.media import make_data_url
+
+                    data_url = make_data_url(image_bytes, mime_type)
+                    parts.append(ImageUrl(url=data_url))
+                history.append(ModelRequest(parts=parts))
 
         return history
 
