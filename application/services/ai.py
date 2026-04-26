@@ -214,7 +214,10 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
             data_url = make_data_url(context.image_bytes, context.mime_type)
             # Create multimodal prompt with text and image
-            user_prompt = [context.prompt or "Что на картинке?", ImageUrl(url=data_url)]
+            user_prompt = [
+                context.prompt or "Картинка",
+                ImageUrl(url=data_url, media_type=context.mime_type),
+            ]
         else:
             user_prompt = context.prompt
 
@@ -291,7 +294,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                     from utils.media import make_data_url
 
                     data_url = make_data_url(image_bytes, mime_type)
-                    parts.append(ImageUrl(url=data_url))
+                    parts.append(ImageUrl(url=data_url, media_type=mime_type))
                 history.append(ModelResponse(parts=parts))
             else:
                 parts = [UserPromptPart(content=f"{author}: {full_text}")]
@@ -299,7 +302,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                     from utils.media import make_data_url
 
                     data_url = make_data_url(image_bytes, mime_type)
-                    parts.append(ImageUrl(url=data_url))
+                    parts.append(ImageUrl(url=data_url, media_type=mime_type))
                 history.append(ModelRequest(parts=parts))
 
         return history
