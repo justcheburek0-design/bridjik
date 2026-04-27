@@ -289,20 +289,21 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
             # Build message parts (text + optional image)
             if is_bot:
+                # Bot responses can only contain text, not images
                 parts = [TextPart(content=full_text)]
-                if image_bytes and mime_type:
-                    from utils.media import make_data_url
-
-                    data_url = make_data_url(image_bytes, mime_type)
-                    parts.append(ImageUrl(url=data_url, media_type=mime_type))
                 history.append(ModelResponse(parts=parts))
             else:
-                parts = [UserPromptPart(content=f"{author}: {full_text}")]
+                # User messages can contain text and images
                 if image_bytes and mime_type:
                     from utils.media import make_data_url
 
                     data_url = make_data_url(image_bytes, mime_type)
-                    parts.append(ImageUrl(url=data_url, media_type=mime_type))
+                    parts = [
+                        UserPromptPart(content=f"{author}: {full_text}"),
+                        ImageUrl(url=data_url, media_type=mime_type),
+                    ]
+                else:
+                    parts = [UserPromptPart(content=f"{author}: {full_text}")]
                 history.append(ModelRequest(parts=parts))
 
         return history
