@@ -245,7 +245,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
             return text, self._deps.memory_updates, pending_reactions
 
         except Exception as e:
-            req_log.error("ai.error", error=str(e))
+            req_log.exception("ai.error", error=str(e))
             return DEFAULT_ERROR_MESSAGE, self._deps.memory_updates, []
 
     # -------------------------------------------------------------------------
