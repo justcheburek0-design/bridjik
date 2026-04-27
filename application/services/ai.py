@@ -298,10 +298,12 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                     from utils.media import make_data_url
 
                     data_url = make_data_url(image_bytes, mime_type)
-                    parts = [
-                        UserPromptPart(content=f"{author}: {full_text}"),
+                    # ImageUrl must be inside UserPromptPart.content, not as separate part
+                    content = [
+                        f"{author}: {full_text}",
                         ImageUrl(url=data_url, media_type=mime_type),
                     ]
+                    parts = [UserPromptPart(content=content)]
                 else:
                     parts = [UserPromptPart(content=f"{author}: {full_text}")]
                 history.append(ModelRequest(parts=parts))
