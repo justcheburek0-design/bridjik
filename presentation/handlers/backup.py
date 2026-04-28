@@ -1,6 +1,5 @@
 """Backup and restore handlers for admin."""
 
-import asyncio
 import shutil
 import tarfile
 from datetime import datetime
@@ -59,9 +58,7 @@ async def restore_handler(message: Message, container: Container) -> None:
         return
 
     if not message.reply_to_message or not message.reply_to_message.document:
-        await message.answer(
-            "❌ Ответь на сообщение с файлом бэкапа командой /restore"
-        )
+        await message.answer("❌ Ответь на сообщение с файлом бэкапа командой /restore")
         return
 
     doc = message.reply_to_message.document
