@@ -9,22 +9,22 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Message
 
-from core.dependencies import Container
+from core.config import Config
 
 router = Router(name="backup")
 
 
 @router.message(Command("backup"))
-async def backup_handler(message: Message, container: Container) -> None:
+async def backup_handler(message: Message, config: Config) -> None:
     """Create and send backup of /data directory."""
-    if message.from_user.id not in container.config.ADMIN_IDS:
+    if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("⛔ Только для администраторов")
         return
 
     status_msg = await message.answer("📦 Создаю бэкап...")
 
     try:
-        data_dir = container.config.DATA_DIR
+        data_dir = config.DATA_DIR
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"backup_{timestamp}.tar.gz"
         backup_path = Path(f"/tmp/{backup_name}")
@@ -51,9 +51,9 @@ async def backup_handler(message: Message, container: Container) -> None:
 
 
 @router.message(Command("restore"))
-async def restore_handler(message: Message, container: Container) -> None:
+async def restore_handler(message: Message, config: Config) -> None:
     """Restore backup from attached file."""
-    if message.from_user.id not in container.config.ADMIN_IDS:
+    if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("⛔ Только для администраторов")
         return
 
@@ -68,6 +68,7 @@ async def restore_handler(message: Message, container: Container) -> None:
 
     status_msg = await message.answer("📥 Восстанавливаю бэкап...")
 
+    backup_current = None
     try:
         # Download file
         file = await message.bot.get_file(doc.file_id)
@@ -75,7 +76,7 @@ async def restore_handler(message: Message, container: Container) -> None:
         await message.bot.download_file(file.file_path, backup_path)
 
         # Backup current data
-        data_dir = container.config.DATA_DIR
+        data_dir = config.DATA_DIR
         backup_current = data_dir.parent / f"data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         shutil.copytree(data_dir, backup_current)
 
@@ -98,6 +99,6 @@ async def restore_handler(message: Message, container: Container) -> None:
     except Exception as e:
         await status_msg.edit_text(f"❌ Ошибка восстановления: {e}")
         # Restore from backup if failed
-        if backup_current.exists():
+        if backup_current and backup_current.exists():
             shutil.rmtree(data_dir, ignore_errors=True)
             shutil.copytree(backup_current, data_dir)
