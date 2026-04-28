@@ -57,11 +57,19 @@ async def restore_handler(message: Message, config: Config) -> None:
         await message.answer("⛔ Только для администраторов")
         return
 
-    if not message.reply_to_message or not message.reply_to_message.document:
-        await message.answer("❌ Ответь на сообщение с файлом бэкапа командой /restore")
+    # Check for document in reply or forwarded message
+    doc = None
+    if message.reply_to_message and message.reply_to_message.document:
+        doc = message.reply_to_message.document
+    elif message.document:
+        doc = message.document
+
+    if not doc:
+        await message.answer(
+            "❌ Ответь на сообщение с файлом бэкапа командой /restore или перешли файл с командой"
+        )
         return
 
-    doc = message.reply_to_message.document
     if not doc.file_name.endswith(".tar.gz"):
         await message.answer("❌ Файл должен быть .tar.gz архивом")
         return
