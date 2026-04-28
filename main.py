@@ -11,7 +11,7 @@ import structlog
 
 from core.dependencies import Container
 from infrastructure.health import start_health_server
-from presentation.handlers import admin_memories, admin_stickers, callbacks, messages
+from presentation.handlers import admin_memories, admin_stickers, backup, callbacks, messages
 from presentation.handlers.commands import admin, info, server, start, user
 
 structlog.configure(
@@ -114,6 +114,7 @@ def register_handlers(container: Container):
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
     dp.include_router(admin_memories.router)
+    dp.include_router(backup.router)
     dp.include_router(callbacks.router)
     dp.include_router(messages.router)
 
