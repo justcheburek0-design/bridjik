@@ -5,13 +5,19 @@ import tarfile
 from datetime import datetime
 from pathlib import Path
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, Message
 
 from core.config import Config
 
 router = Router(name="backup")
+
+
+class RestoreStates(StatesGroup):
+    waiting_for_file = State()
 
 
 @router.message(Command("backup"))
@@ -51,24 +57,27 @@ async def backup_handler(message: Message, config: Config) -> None:
 
 
 @router.message(Command("restore"))
-async def restore_handler(message: Message, config: Config) -> None:
-    """Restore backup from attached file."""
+async def restore_start(message: Message, state: FSMContext, config: Config) -> None:
+    """Start restore process."""
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("⛔ Только для администраторов")
         return
 
-    # Check for document in reply or forwarded message
-    doc = None
-    if message.reply_to_message and message.reply_to_message.document:
-        doc = message.reply_to_message.document
-    elif message.document:
-        doc = message.document
+    await state.set_state(RestoreStates.waiting_for_file)
+    await message.answer("📥 Отправь файл бэкапа (.tar.gz)\n\n" "Для отмены отправь /cancel")
 
-    if not doc:
-        await message.answer(
-            "❌ Ответь на сообщение с файлом бэкапа командой /restore или перешли файл с командой"
-        )
-        return
+
+@router.message(Command("cancel"), RestoreStates.waiting_for_file)
+async def restore_cancel(message: Message, state: FSMContext) -> None:
+    """Cancel restore process."""
+    await state.clear()
+    await message.answer("❌ Восстановление отменено")
+
+
+@router.message(RestoreStates.waiting_for_file, F.document)
+async def restore_process(message: Message, state: FSMContext, config: Config) -> None:
+    """Process backup file."""
+    doc = message.document
 
     if not doc.file_name.endswith(".tar.gz"):
         await message.answer("❌ Файл должен быть .tar.gz архивом")
@@ -104,9 +113,18 @@ async def restore_handler(message: Message, config: Config) -> None:
             f"⚠️ Перезапусти бота для применения изменений"
         )
 
+        await state.clear()
+
     except Exception as e:
         await status_msg.edit_text(f"❌ Ошибка восстановления: {e}")
         # Restore from backup if failed
         if backup_current and backup_current.exists():
             shutil.rmtree(data_dir, ignore_errors=True)
             shutil.copytree(backup_current, data_dir)
+        await state.clear()
+
+
+@router.message(RestoreStates.waiting_for_file)
+async def restore_invalid(message: Message) -> None:
+    """Handle invalid input during restore."""
+    await message.answer("❌ Отправь файл .tar.gz или /cancel для отмены")
