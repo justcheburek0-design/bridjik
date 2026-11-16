@@ -8,13 +8,16 @@ from utils.history_context import HISTORY_LIMIT, context_messages
 
 
 class ReminderAI:
-    def __init__(self, client, config, chat_logs):
+    def __init__(self, client, config, chat_logs, telegram_history=None):
         self.client = client
         self.config = config
         self.chat_logs = chat_logs
+        self.telegram_history = telegram_history
 
     async def __call__(self, reminder):
-        recent = context_messages(self.chat_logs.get_recent_messages(reminder['chat_id'], HISTORY_LIMIT))
+        rows = (await self.telegram_history.recent(reminder['chat_id'], HISTORY_LIMIT)
+                if self.telegram_history else self.chat_logs.get_recent_messages(reminder['chat_id'], HISTORY_LIMIT))
+        recent = context_messages(rows)
         history = [{'message_id': r[0], 'author': r[1], 'text': r[3]} for r in recent]
         payload = {
             'reason': reminder['text'], 'chat_id': reminder['chat_id'],

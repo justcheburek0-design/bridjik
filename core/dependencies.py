@@ -13,6 +13,7 @@ from application.services.strings import StringsService
 from application.services.subscription import SubscriptionService
 from core.config import Config
 from infrastructure.bot import create_bot, create_dispatcher
+from infrastructure.telegram_history import TelegramHistory
 from infrastructure.external.gemini import GeminiAPI
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.mc_api import MinecraftAPI
@@ -60,6 +61,8 @@ class Container:
         self.news_api = NewsAPI()
         self.tavily_api = TavilyAPI(self.config.TAVILY_API_KEY)
 
+        self.telegram_history = TelegramHistory(self.config, self.chat_logs_repo)
+
         self.reminders = ReminderService(self.config.DATA_DIR / "reminders.sqlite3", self.bot)
 
         # Services
@@ -81,7 +84,8 @@ class Container:
             memory_repo=self.memory_repo,
             rag_service=self.rag_service,
         )
-        self.reminders.generate = ReminderAI(self.openai_client, self.config, self.chat_logs_repo)
+        self.ai_service.telegram_history = self.telegram_history
+        self.reminders.generate = ReminderAI(self.openai_client, self.config, self.chat_logs_repo, self.telegram_history)
         self.ai_service._deps.reminders = self.reminders
         self.media_service = MediaService(
             self.bot,

@@ -43,6 +43,7 @@ async def on_startup(container: Container):
     try:
         me = await container.bot.get_me()
         log.info("bot.started", username=me.username or "unknown")
+        await container.telegram_history.start()
         container.reminder_task = asyncio.create_task(container.reminders.run())
 
         if me.username:
@@ -81,6 +82,7 @@ async def on_shutdown(container: Container):
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     await container.reminders.close()
+    await container.telegram_history.close()
     log.info("bot.shutting_down")
 
     try:

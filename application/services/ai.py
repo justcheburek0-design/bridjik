@@ -250,7 +250,10 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         pending_reactions: list[tuple[str, str]] = []
 
         full_system_prompt = self._build_system_prompt(system_prompt, context)
-        history = self._build_message_history(context, message)
+        remote = getattr(self, "telegram_history", None)
+        rows = (await remote.recent(context.chat.id, HISTORY_LIMIT, message.message_id)
+                if remote and message else None)
+        history = self._build_message_history(context, message, rows)
 
         prompt_text = timestamp_message(
             context.prompt or ("Картинка" if context.has_image else ""),
@@ -310,13 +313,13 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
     # -------------------------------------------------------------------------
 
     def _build_message_history(
-        self, context: MessageContext, message: types.Message | None
+        self, context: MessageContext, message: types.Message | None, rows=None
     ) -> list:
         """Convert recent chat logs to pydantic-ai ModelMessage history."""
         if not message:
             return []
 
-        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, HISTORY_LIMIT)
+        recent = rows if rows is not None else self.chat_logs_repo.get_recent_messages(context.chat.id, HISTORY_LIMIT)
         recent = context_messages([row for row in recent if row[0] != message.message_id])
         if not recent:
             return []

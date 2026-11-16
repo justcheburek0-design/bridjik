@@ -25,6 +25,8 @@ class Config(BaseSettings):
 
     # Telegram bot
     BOT_TOKEN: str = ""
+    TELEGRAM_API_ID: int = 0
+    TELEGRAM_API_HASH: str = ""
     BOT_USERNAME: str = "minebridge52bot"
     VERSION: str = __version__
     ADMIN_IDS: list[int] = []
