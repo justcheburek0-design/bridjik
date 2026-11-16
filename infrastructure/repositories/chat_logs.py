@@ -6,12 +6,14 @@ import asyncio
 import base64
 import logging
 from collections import defaultdict, deque
+from datetime import datetime
 from pathlib import Path
 
 import msgspec.json as mjson
 
 from domain.interfaces import IChatLogsRepository
 from utils.text import shorten
+from utils.time import timestamp_message
 
 
 class ChatLogsRepository(IChatLogsRepository):
@@ -215,6 +217,7 @@ class ChatLogsRepository(IChatLogsRepository):
         mime_type: str | None = None,
         file_id: str | None = None,
         reactions: dict[int, list[str]] | None = None,
+        sent_at: datetime | None = None,
     ) -> None:
         """Add message to chat logs."""
         self._logs[chat_id].append(
@@ -222,7 +225,7 @@ class ChatLogsRepository(IChatLogsRepository):
                 message_id,
                 author,
                 is_bot,
-                shorten(text),
+                timestamp_message(shorten(text), sent_at),
                 image_bytes,
                 mime_type,
                 file_id,

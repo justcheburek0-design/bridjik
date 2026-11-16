@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 import structlog
@@ -13,6 +15,7 @@ from aiogram.types import ReactionTypeEmoji
 from cachetools import TTLCache
 from openai import AsyncOpenAI
 from pydantic_ai import Agent, ImageUrl, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from openai.types import chat
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
@@ -27,6 +30,8 @@ from domain.interfaces import IChatLogsRepository, IHistoryRepository
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.mc_api import MinecraftAPI
 from utils.html_edit import remove as remove_html
+from utils.time import historical_message, timestamp_message
+from utils.history_context import HISTORY_LIMIT, context_messages
 
 log = structlog.get_logger(__name__)
 
@@ -62,6 +67,8 @@ class AIServiceDeps:
     chat_logs_repo: IChatLogsRepository
     config: Config
 
+    reminders: Any = None
+
     # Mutable per-request state (reset in AIService.complete)
     memory_updates: list[str] = field(default_factory=list)
     current_message: types.Message | None = field(default=None, repr=False)
@@ -95,6 +102,22 @@ class AIServiceDeps:
         return None
 
 
+class RouterAIChatModel(OpenAIChatModel):
+    """OpenAI-compatible model with RouterAI response normalisation.
+
+    RouterAI may return service_tier='standard', which is accepted by the
+    upstream router but is not currently in openai-python's ChatCompletion
+    Literal set. pydantic-ai re-validates responses, so normalise that field
+    before its validation step.
+    """
+
+    def _validate_completion(self, response: chat.ChatCompletion) -> chat.ChatCompletion:
+        data = response.model_dump()
+        if data.get("service_tier") == "standard":
+            data["service_tier"] = "default"
+        return chat.ChatCompletion.model_validate(data)
+
+
 class AIService(AIPromptBuilderMixin, AITTSMixin):
     """Service for AI completions powered by pydantic-ai."""
 
@@ -121,6 +144,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         self.memory_repo = memory_repo
         self.rag_service = rag_service
 
+        self._client = client
         self._stickers_cache: TTLCache = TTLCache(maxsize=1, ttl=60)
 
         # Runtime deps shared with tools
@@ -135,11 +159,30 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
             config=config,
         )
 
-        openai_model = OpenAIChatModel(
+        openai_model = RouterAIChatModel(
             model,
             provider=OpenAIProvider(openai_client=client),
         )
         self._agent: Agent[AIServiceDeps, str] = Agent(
+            openai_model,
+            output_type=str,
+            deps_type=AIServiceDeps,
+        )
+        register_tools(self._agent)
+
+    def set_model(self, model: str) -> None:
+        """Switch active OpenAI-compatible model at runtime."""
+        model = model.strip()
+        if not model:
+            raise ValueError("model is empty")
+
+        self.model = model
+        self.config.AI_MODEL = model
+        openai_model = RouterAIChatModel(
+            model,
+            provider=OpenAIProvider(openai_client=self._client),
+        )
+        self._agent = Agent(
             openai_model,
             output_type=str,
             deps_type=AIServiceDeps,
@@ -201,12 +244,26 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
             model=self.model,
         )
 
-        self._deps.current_message = message
-        self._deps.memory_updates = []
+        # Isolate owner/message state across concurrent requests.
+        from dataclasses import replace
+        deps = replace(self._deps, current_message=message, memory_updates=[])
         pending_reactions: list[tuple[str, str]] = []
 
         full_system_prompt = self._build_system_prompt(system_prompt, context)
         history = self._build_message_history(context, message)
+
+        prompt_text = timestamp_message(
+            context.prompt or ("Картинка" if context.has_image else ""),
+            message.date if message else None,
+        )
+
+        if message and message.reply_to_message:
+            reply = message.reply_to_message
+            reply_text = reply.text or reply.caption or "[медиа]"
+            prompt_text += (
+                f"\n[Ответ на сообщение {reply.message_id}]: "
+                f"{timestamp_message(reply_text, reply.date)}"
+            )
 
         # Build user prompt with optional image
         if context.has_image and context.image_bytes and context.mime_type:
@@ -215,16 +272,16 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
             data_url = make_data_url(context.image_bytes, context.mime_type)
             # Create multimodal prompt with text and image
             user_prompt = [
-                context.prompt or "Картинка",
+                prompt_text,
                 ImageUrl(url=data_url, media_type=context.mime_type),
             ]
         else:
-            user_prompt = context.prompt
+            user_prompt = prompt_text
 
         try:
             result = await self._agent.run(
                 user_prompt,
-                deps=self._deps,
+                deps=deps,
                 message_history=history,
                 model_settings=ModelSettings(temperature=1),
                 instructions=full_system_prompt,
@@ -242,11 +299,11 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                 output_tokens=usage.output_tokens,
             )
 
-            return text, self._deps.memory_updates, pending_reactions
+            return text, deps.memory_updates, pending_reactions
 
         except Exception as e:
             req_log.exception("ai.error", error=str(e))
-            return DEFAULT_ERROR_MESSAGE, self._deps.memory_updates, []
+            return DEFAULT_ERROR_MESSAGE, deps.memory_updates, []
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -259,7 +316,8 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
         if not message:
             return []
 
-        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, 10)
+        recent = self.chat_logs_repo.get_recent_messages(context.chat.id, HISTORY_LIMIT)
+        recent = context_messages([row for row in recent if row[0] != message.message_id])
         if not recent:
             return []
 
@@ -271,6 +329,8 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
             if not text:
                 continue
+            if message_id == message.message_id:
+                continue  # Current message is sent separately, with its Telegram timestamp.
             if text.startswith("🔄 Бот перезагружен"):
                 is_bot = True
 
@@ -285,7 +345,7 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
                 if all_emojis:
                     reaction_text = f" [Реакции: {', '.join(sorted(all_emojis))}]"
 
-            full_text = text + reaction_text
+            full_text = historical_message(text) + reaction_text
 
             # Build message parts (text + optional image)
             if is_bot:
@@ -310,17 +370,51 @@ class AIService(AIPromptBuilderMixin, AITTSMixin):
 
         return history
 
+    # Media action tags that should NOT be treated as emoji reactions
+    _MEDIA_ACTION_KEYS = frozenset({
+        "voice", "sticker", "find_photo", "gen_photo", "kb", "guess",
+    })
+
     def _parse_reactions(self, text: str) -> tuple[str, list[tuple[str, str]]]:
         pattern = r"\[(.*?):(.*?)\]"
-        reactions = [
-            (m.group(1).strip(), m.group(2).strip())
-            for m in re.finditer(pattern, text)
-            if m.group(1).strip() and m.group(2).strip()
-        ]
-        for emoji, excerpt in reactions:
-            log.info("reaction.parsed", emoji=emoji, excerpt=excerpt[:30])
+        reactions: list[tuple[str, str]] = []
+        segments: list[tuple[str, str | None]] = []  # (raw_text, None) or (None, "emoji:excerpt") for removal
 
-        cleaned = re.sub(r"\n*\[.*?:.*?\]\n*", "", text)
+        pos = 0
+        for m in re.finditer(pattern, text):
+            key = m.group(1).strip()
+            val = m.group(2).strip()
+            # Text before this tag (handle invalid tags too)
+            if m.start() > pos:
+                segments.append((text[pos : m.start()], None))
+            if not key or not val:
+                pos = m.end()
+                continue
+
+            if key.lower() in self._MEDIA_ACTION_KEYS:
+                # Media action — keep in text as-is
+                segments.append((m.group(0), None))
+            else:
+                # Emoji reaction — strip from text, collect separately
+                segments.append(("", key))
+                reactions.append((key, val))
+
+            pos = m.end()
+
+        # Remaining text after last match
+        if pos < len(text):
+            segments.append((text[pos:], None))
+
+        for _, emoji in segments:
+            if emoji:
+                log.info("reaction.parsed", emoji=emoji, excerpt="...")
+
+        # Build cleaned text: only keep text segments, skip reaction placeholders
+        cleaned_parts: list[str] = []
+        for content, _ in segments:
+            if content is not None:
+                cleaned_parts.append(content)
+        cleaned = "".join(cleaned_parts)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         return cleaned, reactions
 

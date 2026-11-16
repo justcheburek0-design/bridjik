@@ -58,15 +58,19 @@ class Config(BaseSettings):
     MC_CACHE_TTL: int = 20
 
     # Memory limits
-    GROUP_MAX_MESSAGES: int = 25
-    DM_MAX_MESSAGES: int = 15
+    GROUP_MAX_MESSAGES: int = 200
+    DM_MAX_MESSAGES: int = 200
 
     # AI Models
-    AI_MODEL: str = "x-ai/grok-4.1-fast"
+    AI_MODEL: str = "hermes"
     GEMINI_MODEL: str = "gemini-2.5-flash"
     IMAGE_MODEL: str = "black-forest-labs/flux.2-klein-4b"
     TTS_URL: str = "http://127.0.0.1:8005/tts"
     ENABLE_TTS: bool = True
+    VOICE_SP_SPEAKER: str = "ono_anna"
+    VOICE_SP_LANGUAGE: str = "russian"
+    VOICE_SP_INSTRUCT: str = "Говори дружелюбно и живо, как телеграм-бот MineBridge."
+    VOICE_SP_TIMEOUT: int = 600
     MAX_OUTPUT_LENGTH: int = 4000
 
     # Context settings

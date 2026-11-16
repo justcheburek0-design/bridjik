@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from application.services.ai import AIService
 from application.services.game import GameService
+from application.services.reminders import ReminderService
+from application.services.reminder_ai import ReminderAI
 from application.services.media import MediaService
 
 # from application.services.rag import RAGService  # RAG disabled
@@ -58,6 +60,8 @@ class Container:
         self.news_api = NewsAPI()
         self.tavily_api = TavilyAPI(self.config.TAVILY_API_KEY)
 
+        self.reminders = ReminderService(self.config.DATA_DIR / "reminders.sqlite3", self.bot)
+
         # Services
         self.subscription_service = SubscriptionService(self.bot, self.config.CHANNEL)
         self.game_service = GameService(self.memory_repo)
@@ -77,6 +81,8 @@ class Container:
             memory_repo=self.memory_repo,
             rag_service=self.rag_service,
         )
+        self.reminders.generate = ReminderAI(self.openai_client, self.config, self.chat_logs_repo)
+        self.ai_service._deps.reminders = self.reminders
         self.media_service = MediaService(
             self.bot,
             self.config.BOT_TOKEN,

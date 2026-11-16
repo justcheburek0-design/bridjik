@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 
@@ -37,6 +38,8 @@ class IChatLogsRepository(Protocol):
         message_id: int | None = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
+        file_id: str | None = None,
+        sent_at: datetime | None = None,
     ) -> None: ...
 
     def update_reactions(

@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import msgspec.json as mjson
 import structlog
+
+from utils.time import moscow_time
 from pydantic_ai import Agent, RunContext
 
 if TYPE_CHECKING:
@@ -16,6 +18,37 @@ log = structlog.get_logger(__name__)
 
 def register_tools(agent: "Agent[Any, str]") -> None:
     """Register all tool handlers on the given agent."""
+
+    @agent.tool
+    async def create_reminder(ctx: RunContext[Any], text: str, when: str, timezone: str = "Europe/Moscow", use_ai: bool = True) -> str:
+        """Create a reminder requested by the current sender. when: ISO 8601 date/time;
+        timezone: IANA zone (default Moscow). Delivered to this chat/topic, mentioning sender.
+        use_ai defaults to true: prepare an AI response with chat context 30s before due.
+        If late, send reason at due and AI response afterward. False sends only literal text.
+        Resolve relative dates using get_current_time; clarify missing time. Never use a quoted request.
+        """
+        if not ctx.deps.current_message or not ctx.deps.current_message.from_user:
+            return "Ошибка: нет контекста пользователя."
+        return ctx.deps.reminders.create(ctx.deps.current_message, text, when, timezone, use_ai)
+
+    @agent.tool
+    async def list_reminders(ctx: RunContext[Any]) -> str:
+        """List the current sender's active reminders in this chat."""
+        if not ctx.deps.current_message or not ctx.deps.current_message.from_user:
+            return "Ошибка: нет контекста пользователя."
+        return ctx.deps.reminders.listing(ctx.deps.current_message)
+
+    @agent.tool
+    async def cancel_reminder(ctx: RunContext[Any], reminder_id: int) -> str:
+        """Cancel an active reminder by ID, only owned by the current sender in this chat."""
+        if not ctx.deps.current_message or not ctx.deps.current_message.from_user:
+            return "Ошибка: нет контекста пользователя."
+        return ctx.deps.reminders.cancel(ctx.deps.current_message, reminder_id)
+
+    @agent.tool
+    async def get_current_time(ctx: RunContext[Any]) -> str:
+        """Get the current date and time in Moscow (Europe/Moscow, UTC+03:00)."""
+        return moscow_time()
 
     @agent.tool
     async def get_player_info(ctx: RunContext[Any], query: str) -> str:

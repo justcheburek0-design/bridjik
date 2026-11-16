@@ -88,7 +88,8 @@ def _save_incoming_message(
         file_id = message.sticker.file_id
 
     chat_logs_repo.add_message(
-        chat_id, author, is_bot, final_text, message_id, image_bytes, mime_type, file_id
+        chat_id, author, is_bot, final_text, message_id, image_bytes, mime_type, file_id,
+        sent_at=message.date,
     )
 
 

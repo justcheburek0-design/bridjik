@@ -12,7 +12,7 @@ import structlog
 from core.dependencies import Container
 from infrastructure.health import start_health_server
 from presentation.handlers import admin_memories, admin_stickers, backup, callbacks, messages
-from presentation.handlers.commands import admin, info, server, start, user
+from presentation.handlers.commands import admin, info, model, reminders, server, start, user
 
 structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
@@ -43,6 +43,7 @@ async def on_startup(container: Container):
     try:
         me = await container.bot.get_me()
         log.info("bot.started", username=me.username or "unknown")
+        container.reminder_task = asyncio.create_task(container.reminders.run())
 
         if me.username:
             container.config.BOT_USERNAME = me.username
@@ -75,6 +76,11 @@ async def on_startup(container: Container):
 
 async def on_shutdown(container: Container):
     """Execute on bot shutdown."""
+    task = getattr(container, "reminder_task", None)
+    if task:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    await container.reminders.close()
     log.info("bot.shutting_down")
 
     try:
@@ -107,10 +113,13 @@ def register_handlers(container: Container):
     dp = container.dispatcher
     deps = container.get_handler_dependencies()
 
+    dp["container"] = container
+    dp.include_router(reminders.router)
     dp.include_router(start.router)
     dp.include_router(user.router)
     dp.include_router(info.router)
     dp.include_router(server.router)
+    dp.include_router(model.router)
     dp.include_router(admin.router)
     dp.include_router(admin_stickers.router)
     dp.include_router(admin_memories.router)

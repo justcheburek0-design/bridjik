@@ -56,3 +56,10 @@ archive/
 
 # ---- Data directory ----
 data/
+data_backup*/
+backups/
+.rag_cache/
+*.sqlite3-*
+*.db
+*.db-*
+api_credentials.json
