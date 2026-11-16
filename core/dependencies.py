@@ -14,6 +14,7 @@ from application.services.subscription import SubscriptionService
 from core.config import Config
 from infrastructure.bot import create_bot, create_dispatcher
 from infrastructure.telegram_history import TelegramHistory
+from infrastructure.search_archive import SearchArchive
 from infrastructure.external.gemini import GeminiAPI
 from infrastructure.external.mb_api import MineBridgeAPI
 from infrastructure.external.mc_api import MinecraftAPI
@@ -84,6 +85,8 @@ class Container:
             memory_repo=self.memory_repo,
             rag_service=self.rag_service,
         )
+        self.search_archive = SearchArchive(self.config.DATA_DIR / "search.sqlite3", self.telegram_history, self.chat_logs_repo)
+        self.ai_service._deps.search_archive = self.search_archive
         self.ai_service.telegram_history = self.telegram_history
         self.reminders.generate = ReminderAI(self.openai_client, self.config, self.chat_logs_repo, self.telegram_history)
         self.ai_service._deps.reminders = self.reminders

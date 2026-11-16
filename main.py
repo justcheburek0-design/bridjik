@@ -45,6 +45,7 @@ async def on_startup(container: Container):
         log.info("bot.started", username=me.username or "unknown")
         await container.telegram_history.start()
         container.reminder_task = asyncio.create_task(container.reminders.run())
+        container.search_task = asyncio.create_task(container.search_archive.run())
 
         if me.username:
             container.config.BOT_USERNAME = me.username
@@ -81,6 +82,10 @@ async def on_shutdown(container: Container):
     if task:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+    search_task = getattr(container, "search_task", None)
+    if search_task:
+        search_task.cancel()
+        await asyncio.gather(search_task, return_exceptions=True)
     await container.reminders.close()
     await container.telegram_history.close()
     log.info("bot.shutting_down")

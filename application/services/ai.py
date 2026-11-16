@@ -68,6 +68,7 @@ class AIServiceDeps:
     config: Config
 
     reminders: Any = None
+    search_archive: Any = None
 
     # Mutable per-request state (reset in AIService.complete)
     memory_updates: list[str] = field(default_factory=list)
